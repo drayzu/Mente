@@ -1,0 +1,281 @@
+import * as THREE from 'three';
+import { Timeline } from './timeline';
+import { enfocar, materia, materiaBuilder } from '../src/engine/materia';
+import { pantalla } from '../src/engine/pantalla';
+import { gauss } from '../src/engine/math';
+import { FONT, ink, ORO, type Cuenta, type Rotulo } from './placa';
+import { CORAL, ease, logLerp, SEGURO, TU, V } from './comun';
+import type { Escena, Frame, Instancia } from './tipos';
+
+/**
+ * Study · entering the point (the opening, moments 1–2, and the forest of act I). The series ends
+ * every work on a point that looks: «tú». This one starts there and goes in. The point turns out
+ * to be a brain, and the brain a forest of cells that fire, with nobody in the middle.
+ *
+ * The forest is its own small world round the camera's path; the point and the brain sit ahead of
+ * the camera at a distance the timeline gives (nothing here lives at real scale).
+ */
+
+const CAP = 'El que mira';
+
+/** A brain as points in a unit-sized box: two folded hemispheres, the cerebellum and the stem. Front is +Z. */
+export function cerebro(n: number, seed: number, estalla: boolean) {
+  const b = materiaBuilder(seed);
+  const r = b.r;
+  const c = new THREE.Color();
+  while (b.count < n) {
+    const x = (r() * 2 - 1) * 0.76;
+    const y = r() * 1.55 - 0.95;
+    const z = (r() * 2 - 1) * 0.95;
+    let luz = 0;
+    const hx = (Math.abs(x) - 0.36) / 0.37;
+    const hy = (y - 0.05) / (y < 0.05 ? 0.36 : 0.5);
+    const hz = z / 0.92;
+    const q = Math.sqrt(hx * hx + hy * hy + hz * hz);
+    if (q < 1 && Math.abs(x) > 0.022) {
+      // The folds: bright ridges near the surface, little inside.
+      const f = Math.sin(24 * (x * 0.55 + y * 0.83) + 4.2 * Math.sin(8.5 * z + 2 * x)) * Math.sin(17 * z + 3.1 * Math.sin(12 * y));
+      const fuera = q > 0.88;
+      const w = fuera ? (f > 0.04 ? 1 : 0.035) : 0.012;
+      if (r() < w) luz = fuera ? 0.55 + 0.45 * Math.min(1, f * 2.5) : 0.4;
+    } else {
+      const cx = x / 0.5;
+      const cy = (y + 0.44) / 0.2;
+      const cz = (z + 0.6) / 0.3;
+      const sx = x;
+      const sz = z + 0.3 + (-0.3 - y) * 0.25;
+      if (cx * cx + cy * cy + cz * cz < 1 && r() < 0.35 + 0.35 * Math.sin(70 * y)) luz = 0.7;
+      else if (y < -0.3 && sx * sx + sz * sz < 0.07 * 0.07 && r() < 0.6) luz = 0.6;
+    }
+    if (luz === 0) continue;
+    c.setRGB(1, 1, 1);
+    b.push(x, y, z, c, 0.011, luz, estalla ? { from: [0, 0, 0], delay: r() } : {});
+  }
+  return b.data();
+}
+
+/**
+ * The forest: neurons round a path that runs down −Z. Each is a body, branching dendrites and one
+ * long axon, all points. `aKind` is the distance along the branch from the body (an impulse is a
+ * front that travels out along it); `aNeu` is the cell's own rhythm and whether the point is the body.
+ */
+function bosque(seed: number, celulas: number, largo: number) {
+  const b = materiaBuilder(seed);
+  const r = b.r;
+  const neu: number[] = [];
+  const c = new THREE.Color();
+  const paso = 0.045;
+  const d = V();
+  const rama = (o: THREE.Vector3, dir: THREE.Vector3, len: number, nivel: number, dist: number, fase: number, grosor: number, luz: number) => {
+    const p = o.clone();
+    const u = dir.clone();
+    const n = Math.round(len / paso);
+    for (let i = 0; i < n; i++) {
+      u.add(d.set(gauss(r), gauss(r), gauss(r)).multiplyScalar(0.11)).normalize();
+      p.addScaledVector(u, paso);
+      b.push(p.x, p.y, p.z, c, grosor * (1 - (0.5 * i) / n), luz, { kind: dist + i * paso });
+      neu.push(fase, 0);
+    }
+    if (nivel <= 0) return;
+    for (let k = 0; k < 2; k++) {
+      const v = u.clone().add(d.set(gauss(r), gauss(r), gauss(r)).multiplyScalar(0.75)).normalize();
+      rama(p, v, len * (0.6 + 0.25 * r()), nivel - 1, dist + len, fase, grosor * 0.72, luz * 0.85);
+    }
+  };
+  for (let i = 0; i < celulas; i++) {
+    const a = r() * Math.PI * 2;
+    const rho = 0.85 + 6.5 * Math.pow(r(), 1.4);
+    const o = V(Math.cos(a) * rho, Math.sin(a) * rho * 0.8, 5 - r() * (largo + 14));
+    const fase = r();
+    c.copy(CORAL);
+    b.push(o.x, o.y, o.z, c, 0.2, 1.6, { kind: 0 });
+    neu.push(fase, 1);
+    const ramas = 4 + Math.floor(r() * 3);
+    for (let k = 0; k < ramas; k++) {
+      const [x, y, z] = b.onSphere();
+      rama(o, V(x, y, z), 0.9 + 0.8 * r(), 2, 0, fase, 0.034, 0.75);
+    }
+    // The axon: long, thin, nearly straight.
+    const [x, y, z] = b.onSphere();
+    rama(o, V(x, y, z), 5 + 4 * r(), 0, 0, fase, 0.02, 0.5);
+  }
+  return { data: b.data(), neu: new Float32Array(neu) };
+}
+
+export const punto: Escena = {
+  id: 'punto',
+  nombre: 'Entrar al punto',
+  estilos: [
+    { key: '1', nombre: 'Acercarse', nota: 'El punto no cambia: solo te acercas, y de cerca era un cerebro hecho de luces. Entras por el medio.' },
+    { key: '2', nombre: 'Estallido', nota: 'El punto estalla en miles de luces que se ordenan solas en un cerebro, y te envuelven.' },
+    { key: '3', nombre: 'A través de la luz', nota: 'El punto crece hasta llenarlo todo de luz. Cuando la luz baja, ya estás adentro.' },
+  ],
+  montar(stage, estilo, viaje = false): Instancia {
+    const root = stage.root;
+    const { camera } = stage;
+    stage.bloom.strength = 0.6;
+    stage.bloom.radius = 0.65;
+    stage.bloom.threshold = 0.35;
+
+    const tl = new Timeline();
+    // D: log10 of the distance to the point; giro: the brain's turn; k: the burst; b: the forest; z: the way in.
+    tl.set({ D: 2.7, giro: 1.15, k: estilo === 1 ? 0 : 1, b: 0, z: 0, luz: 0, apaga: 0 });
+    tl.label('tu').caption(3.0, 'Tú', 'Esto eres tú, visto desde lejos: un punto que mira.');
+    tl.to(3.0, { D: estilo === 1 ? 1.2 : 1.6 });
+    tl.label('adentro').caption(4.4, 'Adentro', 'Pero por dentro no eres un punto. Eres 86 000 millones de células, y ninguna sabe que existes.');
+    if (estilo === 1) tl.with(2.2, { k: 1 });
+    if (estilo === 2) tl.with(2.6, { luz: 1 });
+    tl.to(2.8, { D: 0.44, giro: 0.85 });
+    if (estilo === 2) tl.with(1.6, { apaga: 1 });
+    tl.to(1.6, { D: -1.2, giro: 0.55, b: 1 });
+    if (viaje) {
+      // In the journey the forest is the way to act I, which looks at one cell alone.
+      tl.label('bosque').caption(6.0, 'Un bosque', 'Durante toda la historia, esto fue lo único en el universo conocido capaz de entender algo. Mientras lees esto, está dejando de serlo. Vamos a ver cómo.');
+      tl.to(6.0, { z: -26 });
+    } else {
+      tl.label('bosque').caption(5.2, 'Un bosque', 'Cada luz es una célula. Recibe señales y, a veces, dispara una. Eso es todo lo que sabe hacer.');
+      tl.to(5.2, { z: -30 });
+    }
+
+    // «Tú», from afar.
+    const uno = materiaBuilder(1);
+    uno.push(0, 0, 0, TU.clone(), 0.02, 1);
+    const tu = materia(uno.data());
+    tu.u.uFuente.value = 1;
+
+    const nube = materia(cerebro(110000, 5, estilo === 1), {
+      pre: /* glsl */ `uniform float uTono; uniform vec3 uTu, uCoral;`,
+      move: /* glsl */ `
+        em *= mix(uTu, uCoral, uTono) * (0.75 + 0.25 * sin(uTime * (0.5 + seed) + seed * 50.0));`,
+      uniforms: { uTono: { value: 0 }, uTu: { value: TU.clone() }, uCoral: { value: CORAL.clone() } },
+    });
+    nube.u.uSpread.value = 0.7;
+    const lejos = new THREE.Group();
+    lejos.add(tu.points);
+    if (estilo !== 2) lejos.add(nube.points);
+    root.add(lejos);
+
+    // 3 · the light that fills everything: a glow round the centre of the screen.
+    const luz =
+      estilo === 2
+        ? pantalla(
+            /* glsl */ `
+            uniform float uRadio, uFuerza;
+            uniform vec3 uColor;
+            void main() {
+              vec2 c = (vUv - 0.5) * vec2(uAspect, 1.0);
+              float g = 1.0 / (1.0 + dot(c, c) / max(uRadio * uRadio, 1e-6));
+              gl_FragColor = vec4(mix(uColor, vec3(1.0), g * 0.6) * g * uFuerza, 1.0);
+            }`,
+            { uRadio: { value: 0.01 }, uFuerza: { value: 0 }, uColor: { value: TU.clone() } },
+          )
+        : null;
+    if (luz) root.add(luz.mesh);
+
+    const B = bosque(9, 230, 30);
+    const celulas = materia(B.data, {
+      pre: /* glsl */ `attribute vec2 aNeu; uniform float uPulso; ${SEGURO}`,
+      move: /* glsl */ `
+        float fase = fract(uTime * (0.1 + 0.2 * aNeu.x) + aNeu.x * 17.0);
+        float x = (aKind - fase * 10.0) / 0.32;
+        float pulso = exp(-x * x) * uPulso;
+        // The body flares as its impulse leaves.
+        pulso = max(pulso, aNeu.y * exp(-fase * 14.0) * uPulso);
+        em = mix(em * 0.3, vec3(1.0, 0.86, 0.62) * 3.2, pulso);
+        sz *= 1.0 + 0.7 * pulso;`,
+      uniforms: { uPulso: { value: 1 } },
+      extra: { aNeu: [B.neu, 2] },
+    });
+    celulas.u.uFog.value = 11;
+    root.add(celulas.points);
+
+    const camino = (z: number, out: THREE.Vector3) => out.set(Math.sin(z * 0.21) * 0.32, Math.sin(z * 0.13 + 1) * 0.22, z);
+    const pos = V();
+    const at = V();
+    const dir = V();
+
+    return {
+      tl,
+      escalera: true,
+      luzSalida: CORAL.clone().lerp(new THREE.Color(1.0, 0.86, 0.62), 0.5),
+      marca: (p) => (viaje ? ease(2.4, 3.2, p) : 1),
+      placa(g, f) {
+        // The journey's title, over the point.
+        const a = viaje ? 1 - ease(1.9, 2.8, f.p) : 0;
+        if (a < 0.01) return;
+        const u = f.u;
+        g.save();
+        g.globalAlpha *= a;
+        g.textAlign = 'center';
+        g.textBaseline = 'middle';
+        g.font = FONT.mono(11 * u);
+        g.letterSpacing = `${1.8 * u}px`;
+        g.fillStyle = ORO;
+        g.fillText('HORIZONTES · 05', f.W / 2, f.H * 0.3 - 92 * u);
+        g.letterSpacing = '0px';
+        g.font = FONT.serif(118 * u);
+        g.fillStyle = ink(0.96);
+        g.fillText('Mente', f.W / 2, f.H * 0.3);
+        g.font = FONT.italic(30 * u);
+        g.fillStyle = ink(0.75);
+        g.fillText('¿Quién mira?', f.W / 2, f.H * 0.3 + 84 * u);
+        g.restore();
+      },
+      cuenta(p): Cuenta | null {
+        const a = ease(tl.at('adentro') + 0.6, tl.at('adentro') + 2, p);
+        return a > 0.01 ? { pisos: ['10', '14'], linea: 'conexiones · tú', h: 14.5, a } : null;
+      },
+      rotulo(p): Rotulo | null {
+        const c = tl.captionAt(p);
+        return c ? { capitulo: p < tl.at('bosque') ? CAP : 'I · Materia que piensa', name: c.name, fact: c.fact } : null;
+      },
+      update(f: Frame) {
+        const p = f.p;
+        camera.near = 0.01;
+        camera.far = 2000;
+        camera.fov = 46;
+        const z = tl.get('z', p);
+        camino(z, pos);
+        camino(z - 2.5, at);
+        camera.position.copy(pos);
+        camera.up.set(0, 1, 0);
+        camera.lookAt(at);
+        dir.copy(at).sub(pos).normalize();
+
+        const lD = tl.get('D', p);
+        const D = Math.pow(10, lD);
+        const b = tl.get('b', p);
+        const k = tl.get('k', p);
+        // Past the middle the brain keeps going behind the camera.
+        lejos.position.copy(pos).addScaledVector(dir, lD > -1.15 ? D : -0.3);
+        lejos.rotation.set(0.12 * tl.get('giro', p), tl.get('giro', p), 0);
+
+        const resuelta = 1 - ease(0.7, 1.5, lD);
+        enfocar(tu, f.focal, f.dpr, f.time);
+        tu.u.uMinPx.value = 4.5 * f.dpr;
+        tu.u.uGain.value = 2.6 * (estilo === 1 ? 1 - ease(0, 0.35, k) : estilo === 2 ? (1 - ease(0.1, 0.5, tl.get('luz', p))) * ease(0.5, 0.9, lD) : 1 - resuelta);
+
+        enfocar(nube, f.focal, f.dpr, f.time);
+        nube.u.uK.value = k;
+        nube.u.uTono.value = 1 - ease(0.45, 1.2, lD);
+        // Near, the points grow and pile up: hold their size and their light, or the folds burn white.
+        nube.u.uMaxPx.value = 7 * f.dpr;
+        const cerca = 1 - ease(0.2, 1.3, lD);
+        nube.u.uGain.value = (estilo === 1 ? 0.02 + 0.98 * ease(0, 0.6, k) : 1) * logLerp(0.9, 0.1, cerca) * (1 - ease(0.15, 0.9, b));
+
+        if (luz) {
+          const l = tl.get('luz', p);
+          luz.u.uRadio.value = 0.004 + 3.0 * l * l * l;
+          // It goes out everywhere at once (shrinking back, it would be a point again).
+          luz.u.uFuerza.value = 1.5 * ease(0, 0.25, l) * (1 - ease(0, 1, tl.get('apaga', p)));
+        }
+
+        enfocar(celulas, f.focal, f.dpr, f.time);
+        // (uFundido is the journey's.)
+        celulas.points.visible = b > 0.001;
+        celulas.u.uGain.value = (estilo === 2 ? ease(0.0, 0.7, b) : ease(0.25, 1, b)) * (1 + (estilo === 2 ? 2.5 * (1 - ease(0.2, 1, b)) : 0));
+      },
+      dispose() {},
+    };
+  },
+};

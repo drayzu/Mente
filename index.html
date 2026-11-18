@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Mente</title>
+    <meta name="description" content="¿Quién mira? La quinta obra de Horizontes." />
+    <meta name="theme-color" content="#000000" />
+  </head>
+  <body>
+    <canvas id="scene"></canvas>
+    <canvas id="placa"></canvas>
+    <div id="spacer"></div>
+    <!-- The series' keys, as buttons: S the sound, A autoplay. -->
+    <div class="chips">
+      <button id="sound" class="chip" aria-pressed="false" title="Sonido (S)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10v4h3l5 4V6L7 10H4Z" /><path class="ondas" d="M16 9.5a4 4 0 0 1 0 5M18.5 7a7.5 7.5 0 0 1 0 10" /></svg><span>Sonido</span></button>
+      <button id="play" class="chip" aria-pressed="false" title="Reproducir (A)"><svg viewBox="0 0 24 24" aria-hidden="true"><path class="ic-play" d="M8 5.5v13l10-6.5-10-6.5Z" /><path class="ic-pausa" d="M9 6v12M15 6v12" /></svg><span>Reproducir</span></button>
+    </div>
+    <script type="module" src="./src/main.ts"></script>
+  </body>
+</html>

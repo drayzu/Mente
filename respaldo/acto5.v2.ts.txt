@@ -1,0 +1,602 @@
+import * as THREE from 'three';
+import { Timeline } from './timeline';
+import { enfocar, materia, materiaBuilder, type Nube } from '../src/engine/materia';
+import { pantalla } from '../src/engine/pantalla';
+import { rng } from '../src/engine/math';
+import { muro, nota, ORO, proyectar, type Cuenta, type Rotulo } from './placa';
+import { ease, MAQUINA, mirar, ORO3, SEGURO, V } from './comun';
+import type { Escena, Frame, Instancia } from './tipos';
+import datos from '../src/datos/palabras.json';
+
+/**
+ * Act V · the singularity (moments 21–26). The fastest act, and a guess from end to end: nothing of
+ * this has happened, so the text says «podría», «si». A mind that improves minds: every light of its
+ * net opens into a whole net (the study `singularidad`, manner 1). For a mind a million times
+ * faster the rain hangs in the air (the study `gota`, manner 2). A million copies. The galaxy of
+ * everything we have said, and new stars beyond its edge. Then the nets again, each turn shorter,
+ * until an edge ahead: what follows cannot be seen from here.
+ *
+ * Three places, each with its own camera: the nets, the rain and the sky of ideas. Between two of
+ * them everything closes into one point of light held in front of the camera, so the change of
+ * place is never seen.
+ *
+ * What is real: the galaxy of words (src/datos/palabras.json). Everything else is a drawing.
+ */
+
+const CAP = 'V · La singularidad';
+const N = 30;
+const S = 1 / 8;
+const NIVELES = 9;
+const ALTO = 12;
+const CAE = 8;
+const T1 = 3.64;
+const R = 10;
+const AZUL = 'rgba(205,226,255,1)';
+
+export const acto5: Escena = {
+  id: 'acto5',
+  nombre: 'La singularidad',
+  estilos: [{ key: '1', nombre: 'El acto', nota: 'Redes dentro de redes, la lluvia quieta, un millón de copias, ideas más allá del borde y el horizonte.' }],
+  montar(stage): Instancia {
+    const root = stage.root;
+    const { camera } = stage;
+    stage.bloom.strength = 0.58;
+    stage.bloom.radius = 0.6;
+    stage.bloom.threshold = 0.4;
+
+    const c = new THREE.Color();
+    const BLANCO = new THREE.Color(1, 1, 1);
+
+    // ---- 21 and 26 · one net of N lights repeated inside itself (see estudios/singularidad.ts).
+    const r = rng(17);
+    const red: number[] = [];
+    while (red.length < N * 3) {
+      const x = r() * 2 - 1;
+      const y = r() * 2 - 1;
+      const z = r() * 2 - 1;
+      const q = x * x + y * y + z * z;
+      if (q > 1 || (red.length === 0 && (q < 0.16 || q > 0.36))) continue;
+      let libre = true;
+      for (let i = 0; i < red.length; i += 3) if (Math.hypot(red[i] - x, red[i + 1] - y, red[i + 2] - z) < 0.36) libre = false;
+      if (libre) red.push(x, y, z);
+    }
+    const hilosDe: number[] = [];
+    for (let i = 0; i < N; i++) {
+      const d = Array.from({ length: N }, (_, j) => [j, Math.hypot(red[i * 3] - red[j * 3], red[i * 3 + 1] - red[j * 3 + 1], red[i * 3 + 2] - red[j * 3 + 2])]).sort((a, q) => a[1] - q[1]);
+      for (let k = 1; k <= 2; k++) {
+        const j = d[k][0];
+        let ya = false;
+        for (let h = 0; h < hilosDe.length; h += 2) if (hilosDe[h] === j && hilosDe[h + 1] === i) ya = true;
+        if (!ya) hilosDe.push(i, j);
+      }
+    }
+    // The net we fall into is light 0 of each net; `o` puts the point that stays put at the origin.
+    const o = [-red[0] / (1 - S), -red[1] / (1 - S), -red[2] / (1 - S)];
+    const luces = Array.from({ length: NIVELES + 1 }, (_, k) => materiaBuilder(40 + k));
+    const lineas: number[][] = Array.from({ length: NIVELES + 1 }, () => []);
+    const abrir = (x: number, y: number, z: number, e: number, k: number, gen: number, camino: boolean) => {
+      if (k > NIVELES) return;
+      for (let j = 0; j < N; j++) {
+        const px = x + red[j * 3] * e;
+        const py = y + red[j * 3 + 1] * e;
+        const pz = z + red[j * 3 + 2] * e;
+        const esCamino = camino && j === 0;
+        c.copy(MAQUINA);
+        if (esCamino) c.lerp(ORO3, 0.6);
+        luces[k].push(px, py, pz, c, 0.05 * e, esCamino ? 1.5 : 1, { from: [x, y, z], delay: luces[k].r() });
+        if (gen > 0 && !esCamino) abrir(px, py, pz, e * S, k + 1, gen - 1, false);
+      }
+      if (gen > 0)
+        for (let h = 0; h < hilosDe.length; h += 2) {
+          const a = hilosDe[h] * 3;
+          const q = hilosDe[h + 1] * 3;
+          lineas[k].push(x + red[a] * e, y + red[a + 1] * e, z + red[a + 2] * e, x + red[q] * e, y + red[q + 1] * e, z + red[q + 2] * e);
+        }
+    };
+    c.copy(MAQUINA);
+    luces[0].push(o[0], o[1], o[2], c, 0.05 / S, 1);
+    for (let d = 0; d < NIVELES; d++) {
+      const e = Math.pow(S, d);
+      abrir(o[0] * e, o[1] * e, o[2] * e, e, d + 1, 2, true);
+    }
+    const mundo = new THREE.Group();
+    root.add(mundo);
+    const nubes: Nube[] = luces.map((l) => {
+      const n = materia(l.data(), {
+        move: /* glsl */ `em *= 0.8 + 0.2 * sin(uTime * (0.7 + seed * 1.6) + seed * 60.0);`,
+      });
+      n.u.uSpread.value = 0.6;
+      mundo.add(n.points);
+      return n;
+    });
+    const hilos = lineas.map((p) => {
+      if (p.length === 0) return null;
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(p), 3));
+      const mat = new THREE.LineBasicMaterial({ color: new THREE.Color(0.62, 0.74, 1.0), transparent: true, opacity: 0, depthTest: false, depthWrite: false, blending: THREE.AdditiveBlending });
+      const l = new THREE.LineSegments(geo, mat);
+      l.frustumCulled = false;
+      l.visible = false;
+      mundo.add(l);
+      return { mat, l };
+    });
+
+    // The horizon: a dark disc that hides what is behind it, and the thin ring of light round it.
+    const borde = pantalla(
+      /* glsl */ `
+      uniform float uR, uA, uLuz;
+      void main() {
+        vec2 q = (vUv - 0.5) * vec2(uAspect, 1.0);
+        float d = length(q);
+        float dentro = 1.0 - smoothstep(uR * 0.985, uR * 1.005 + 0.002, d);
+        float ancho = 0.003 + 0.006 * uR;
+        float x = (d - uR) / ancho;
+        float lado = 0.6 + 0.4 * (q.x / max(d, 1e-4));
+        float aro = exp(-x * x) * (0.45 + 0.7 * lado);
+        float halo = step(uR, d) * 0.012 * uR / max(d - uR + 0.03, 0.03);
+        vec3 luz = (vec3(1.0, 0.93, 0.8) * aro + vec3(0.7, 0.8, 1.0) * halo) * uA * uLuz;
+        gl_FragColor = vec4(luz, dentro * uA);
+      }`,
+      { uR: { value: 0.01 }, uA: { value: 0 }, uLuz: { value: 1 } },
+    );
+    const premultiplicado = (m: THREE.ShaderMaterial) => {
+      m.transparent = true;
+      m.blending = THREE.CustomBlending;
+      m.blendSrc = THREE.OneFactor;
+      m.blendDst = THREE.OneMinusSrcAlphaFactor;
+      m.blendSrcAlpha = THREE.OneFactor;
+      m.blendDstAlpha = THREE.OneMinusSrcAlphaFactor;
+    };
+    premultiplicado(borde.mesh.material as THREE.ShaderMaterial);
+    borde.mesh.renderOrder = 90;
+    borde.mesh.visible = false;
+    root.add(borde.mesh);
+
+    // ---- 22 · the rain (see estudios/gota.ts). Every drop's place is a function of the world's time T.
+    const LL = new THREE.Group();
+    root.add(LL);
+    const NG = 9000;
+    const lb = materiaBuilder(11);
+    const linea = new Float32Array(NG * 6);
+    const cola = new Float32Array(NG * 2);
+    const vel = new Float32Array(NG * 2);
+    const velPunto = new Float32Array(NG);
+    for (let i = 0; i < NG; i++) {
+      const x = (lb.r() * 2 - 1) * 9;
+      const y = (lb.r() - 0.5) * ALTO;
+      const z = 2.5 - lb.r() * 20;
+      lb.push(x, y, z, MAQUINA, 0.016, 0.9);
+      const v = CAE * (0.8 + 0.4 * lb.r());
+      velPunto[i] = v;
+      for (let k = 0; k < 2; k++) {
+        linea[i * 6 + k * 3] = x;
+        linea[i * 6 + k * 3 + 1] = y;
+        linea[i * 6 + k * 3 + 2] = z;
+        cola[i * 2 + k] = k;
+        vel[i * 2 + k] = v;
+      }
+    }
+    const CAER = /* glsl */ `p.y = mod(p.y - aVel * uT + ${(ALTO / 2).toFixed(1)}, ${ALTO.toFixed(1)}) - ${(ALTO / 2).toFixed(1)};`;
+    const lluvia = materia(lb.data(), {
+      pre: /* glsl */ `attribute float aVel; uniform float uT;`,
+      move: CAER,
+      uniforms: { uT: { value: 0 } },
+      extra: { aVel: [velPunto, 1] },
+    });
+    lluvia.u.uFog.value = 16;
+    LL.add(lluvia.points);
+    // What a slow eye sees of a falling drop: a streak as long as it falls in one look.
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(linea, 3));
+    geo.setAttribute('aCola', new THREE.BufferAttribute(cola, 1));
+    geo.setAttribute('aVel', new THREE.BufferAttribute(vel, 1));
+    const estela = new THREE.ShaderMaterial({
+      uniforms: { uT: { value: 0 }, uMirada: { value: 0 }, uLuz: { value: 1 }, uFundido: { value: 1 } },
+      vertexShader: /* glsl */ `
+        attribute float aCola, aVel;
+        uniform float uT, uMirada;
+        varying float vA;
+        void main() {
+          vec3 p = position;
+          ${CAER}
+          p.y += aCola * aVel * uMirada;
+          vec4 mv = modelViewMatrix * vec4(p, 1.0);
+          vA = (1.0 - aCola) * exp(-max(-mv.z, 0.0) / 14.0);
+          gl_Position = projectionMatrix * mv;
+        }`,
+      fragmentShader: /* glsl */ `
+        uniform float uLuz, uFundido;
+        varying float vA;
+        void main() { gl_FragColor = vec4(vec3(0.72, 0.84, 1.0) * vA * uLuz * uFundido, 1.0); }`,
+      transparent: true,
+      depthTest: false,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    });
+    const estelas = new THREE.LineSegments(geo, estela);
+    estelas.frustumCulled = false;
+    LL.add(estelas);
+    // The drop that stops in front of you: a lens with the world upside down inside.
+    const AQUI = V(0.3, 0.12, 0);
+    const RADIO = 0.035;
+    const G = V();
+    const cristal = pantalla(
+      /* glsl */ `
+      ${SEGURO}
+      uniform vec2 uC;
+      uniform float uR, uA, uRayo;
+      float h21(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+      void main() {
+        vec2 q = ((vUv - 0.5) * vec2(uAspect, 1.0) - uC) / max(uR, 1e-5);
+        float d = length(q);
+        if (d > 1.0) {
+          float halo = 0.05 * uA / (1.0 + (d - 1.0) * (d - 1.0) * 60.0);
+          gl_FragColor = vec4(vec3(0.7, 0.82, 1.0) * halo, 0.0);
+          return;
+        }
+        float z = rz(1.0 - d * d);
+        vec2 r = -q * (0.7 + 1.1 * (1.0 - z));
+        float cielo = 0.05 + 0.2 * smoothstep(-1.2, 1.2, -r.y);
+        vec2 g = r * 7.0;
+        vec2 fr = fract(g) - 0.5;
+        float otras = step(0.8, h21(floor(g))) * exp(-dot(fr, fr) * 45.0);
+        float rayo = exp(-pw(abs(r.x + 0.5 - 0.16 * sin(r.y * 6.0 + 1.0)) * 9.0, 2.0)) * smoothstep(1.3, -0.6, -r.y - 2.0 * uRayo + 0.6) * uRayo;
+        float borde = pw(1.0 - z, 2.5);
+        vec2 e = q - vec2(-0.36, 0.42);
+        float brillo = exp(-dot(e, e) * 55.0);
+        vec3 c = vec3(0.72, 0.84, 1.0) * (cielo + otras * 0.8 + borde * 0.75) + vec3(1.0, 0.96, 1.0) * (brillo * 1.5 + rayo * 1.3);
+        float a = smoothstep(1.0, 0.96, d) * uA;
+        gl_FragColor = vec4(c * a, 0.9 * a);
+      }`,
+      { uC: { value: new THREE.Vector2() }, uR: { value: 0.01 }, uA: { value: 0 }, uRayo: { value: 0 } },
+    );
+    premultiplicado(cristal.mesh.material as THREE.ShaderMaterial);
+    cristal.mesh.renderOrder = 90;
+    LL.add(cristal.mesh);
+    const u1 = materiaBuilder(5);
+    u1.push(0, 0, 0, new THREE.Color(0.85, 0.92, 1), RADIO, 1);
+    const luzGota = materia(u1.data());
+    luzGota.u.uFuente.value = 1;
+    LL.add(luzGota.points);
+    // The bolt: a broken line of light with branches, far behind the rain, lit from the top down.
+    const rb = materiaBuilder(23);
+    const q9 = rng(9);
+    const rama = (ax: number, ay: number, bx: number, by: number, k0: number, k1: number, luzR: number, nivel: number) => {
+      let pts = [ax, ay, bx, by];
+      for (let it = 0; it < 6; it++) {
+        const sal: number[] = [];
+        const amp = (nivel === 0 ? 2.6 : 1.3) / Math.pow(1.7, it);
+        for (let i = 0; i < pts.length - 2; i += 2) sal.push(pts[i], pts[i + 1], (pts[i] + pts[i + 2]) / 2 + (q9() - 0.5) * amp, (pts[i + 1] + pts[i + 3]) / 2 + (q9() - 0.5) * amp * 0.35);
+        sal.push(pts[pts.length - 2], pts[pts.length - 1]);
+        pts = sal;
+      }
+      const m = pts.length / 2;
+      for (let i = 0; i < m - 1; i++) {
+        const pasos = Math.max(2, Math.ceil(Math.hypot(pts[i * 2 + 2] - pts[i * 2], pts[i * 2 + 3] - pts[i * 2 + 1]) / 0.035));
+        for (let j = 0; j < pasos; j++) {
+          const t = j / pasos;
+          rb.push(pts[i * 2] + (pts[i * 2 + 2] - pts[i * 2]) * t, pts[i * 2 + 1] + (pts[i * 2 + 3] - pts[i * 2 + 1]) * t, -15, c.setRGB(0.86, 0.84, 1), 0.1 * (0.4 + 0.6 * luzR), luzR, { kind: k0 + (k1 - k0) * ((i + t) / (m - 1)) });
+        }
+        if (nivel < 2 && q9() < (nivel === 0 ? 0.16 : 0.07)) {
+          const k = k0 + (k1 - k0) * (i / (m - 1));
+          const largo = (1.6 + q9() * 3.4) / (nivel + 1);
+          rama(pts[i * 2], pts[i * 2 + 1], pts[i * 2] + (q9() - 0.5) * largo * 2.2, pts[i * 2 + 1] - largo, k, Math.min(1, k + largo * 0.07), luzR * 0.55, nivel + 1);
+        }
+      }
+    };
+    rama(-4.6, 9.5, -2.6, -7.5, 0, 1, 1, 0);
+    const rayo = materia(rb.data(), {
+      pre: /* glsl */ `uniform float uHasta;`,
+      move: /* glsl */ `
+        em *= aKind < uHasta ? 0.55 + 1.6 * exp(-(uHasta - aKind) * 14.0) : 0.0;
+        fuente = 1.0;`,
+      uniforms: { uHasta: { value: 0 } },
+    });
+    LL.add(rayo.points);
+
+    // ---- 23 · a million copies: they all come out of the one that was there.
+    const cb = materiaBuilder(51);
+    for (let i = 0; i < 42000; i++) {
+      const [x, y, z] = cb.onSphere();
+      const rad = 9 * Math.pow(cb.r(), 0.62);
+      cb.push(x * rad, y * rad * 0.8, z * rad, MAQUINA, 0.05, 0.85, { from: [0, 0, 0], delay: cb.r() });
+    }
+    const copias = materia(cb.data(), {
+      pre: /* glsl */ `uniform float uOla;`,
+      move: /* glsl */ `
+        // What one learns, all know: a wave that crosses them all at once.
+        float x = fract(uOla - length(position) * 0.09) - 0.5;
+        em *= 0.28 + 2.4 * exp(-x * x * 40.0);
+        em *= 0.85 + 0.15 * sin(uTime * (1.0 + seed) + seed * 50.0);`,
+      uniforms: { uOla: { value: 0 } },
+    });
+    copias.u.uSpread.value = 0.55;
+    root.add(copias.points);
+
+    // ---- 24–25 · everything we have said (white, the real galaxy of words) and what no one had thought (gold).
+    const NP = datos.palabras.length;
+    const GRUPOS = 1 + Math.max(...datos.grupo);
+    const eb = materiaBuilder(11);
+    const hb = materiaBuilder(23);
+    for (let i = 0; i < NP; i++) {
+      const x = (datos.pos[i * 3] / 32767) * R;
+      const y = (datos.pos[i * 3 + 1] / 32767) * R;
+      const z = (datos.pos[i * 3 + 2] / 32767) * R;
+      const tono = ((datos.grupo[i] * 7) % GRUPOS) / GRUPOS;
+      const peso = 1.25 - 0.6 * (i / NP);
+      eb.push(x, y, z, c.setHSL(tono, 0.18, 0.82), 0.05 * peso, 0.9 * peso);
+      const [dx, dy, dz] = hb.onSphere();
+      const q = 0.25 * hb.r();
+      hb.push(x + dx * q, y + dy * q, z + dz * q, c.setHSL(tono, 0.75, 0.5), 0.9, 0.03);
+    }
+    const estrellas = materia(eb.data(), {
+      move: /* glsl */ `em *= 0.82 + 0.18 * sin(uTime * (0.6 + seed * 1.4) + seed * 40.0);`,
+    });
+    root.add(estrellas.points);
+    const niebla = materia(hb.data());
+    root.add(niebla.points);
+    // New stars: they light up in order, outwards from the edge of what was known.
+    const NACER = /* glsl */ `
+      fuente = 1.0;
+      float dn = uNace * 1.08 - aKind;
+      em *= smoothstep(0.0, 0.04, dn) * (1.0 + 2.2 * exp(-max(dn, 0.0) * 22.0));
+      em *= 0.8 + 0.2 * sin(uTime * (0.6 + seed * 1.4) + seed * 40.0);`;
+    const nuevas = (semilla: number, n: number, r0: number, r1: number, pot: number, size: number) => {
+      const b = materiaBuilder(semilla);
+      for (let i = 0; i < n; i++) {
+        const [x, y, z] = b.onSphere();
+        const u = Math.pow(b.r(), pot);
+        const rad = r0 + (r1 - r0) * u;
+        c.copy(ORO3).lerp(BLANCO, 0.15 * b.r());
+        b.push(x * rad, y * rad * 0.75, z * rad, c, size * (0.6 + 0.8 * b.r()), 0.95, { kind: Math.min(1, u * 0.9 + 0.1 * b.r()) });
+      }
+      return materia(b.data(), { pre: /* glsl */ `uniform float uNace;`, move: NACER, uniforms: { uNace: { value: 0 } } });
+    };
+    const cerca = nuevas(61, 16000, R * 0.92, 21, 1.0, 0.06);
+    const mar = nuevas(63, 26000, 19, 80, 1.5, 0.22);
+    root.add(cerca.points, mar.points);
+
+    // The point everything closes into between two places, and at the end. It is held in front of the camera.
+    const ub = materiaBuilder(3);
+    ub.push(0, 0, 0, new THREE.Color(0.85, 0.92, 1), 0.0001, 1);
+    const punto = materia(ub.data());
+    punto.u.uFuente.value = 1;
+    punto.points.renderOrder = 95;
+    root.add(punto.points);
+
+    const tl = new Timeline();
+    // t, az, hz: the nets (how deep, the turn, the horizon); red, ll, cos: the light of each place;
+    // pt: the point between places; T, zoom, rayo: the rain; co, ck, ola: the copies; gal, nu, mar:
+    // the galaxy, the new stars near and far; d, caz: the camera in the sky of ideas; h: the clock.
+    tl.set({ t: -1.3, az: 0.4, hz: 0, red: 1, pt: 0, ll: 0, T: 0, zoom: 0, rayo: 0, co: 0, ck: 0, ola: 0, cos: 1, gal: 0, nu: 0, mar: 0, d: 1.26, caz: 0, muro: 0, h: 12, fin: 0 });
+    tl.label('mente').caption(2.8, 'Una mente que mejora mentes', 'Hasta aquí, cada mente artificial la diseñó una persona. Si una llega a diseñar mejor que nosotros, la siguiente la diseña ella.');
+    tl.to(2.8, { t: -0.05, az: 0.8, h: 12.2 });
+    tl.label('abre').caption(3.0, 'Se abre', 'Cada mejora la dejaría mejor para mejorarse. Cada luz se abre en una red entera.');
+    tl.to(3.0, { t: 1, az: 1.3, h: 13 });
+    tl.label('otra').caption(2.9, 'Y otra vez', 'Y otra vez. Y otra. Cada vuelta duraría menos que la anterior.');
+    tl.to(1.5, { t: 2, az: 1.7, h: 14 });
+    tl.to(0.9, { t: 2.8, az: 1.95, h: 15 });
+    tl.to(0.5, { t: 3, az: 2.05, red: 0, pt: 1 });
+    tl.label('rapido').caption(2.7, 'Más rápido', 'Tus señales viajan por nervios, a cien metros por segundo. Las suyas, casi a la velocidad de la luz. Podría pensar un millón de veces más rápido.');
+    tl.to(0.6, { ll: 1, pt: 0, T: 0.6 });
+    tl.to(2.1, { T: 2.7 });
+    tl.label('detiene').caption(2.0, 'La lluvia se detiene', 'Para una mente así, el mundo casi no se mueve. La lluvia queda colgada en el aire, y un rayo tarda horas en caer.');
+    tl.to(1.0, { T: 3.5, rayo: 0.1 });
+    tl.to(1.0, { T: 3.62, zoom: 0.35, rayo: 0.45 });
+    tl.label('quieta').caption(3.5, 'Quieta', 'Una gota, quieta frente a ti. En un día tuyo cabrían casi tres mil años suyos.');
+    tl.to(3.0, { T: T1, zoom: 1, rayo: 0.6 });
+    tl.to(0.5, { ll: 0, pt: 1, zoom: 1.04 });
+    tl.label('copias').caption(4.5, 'Un millón de copias', 'A una mente así se la puede copiar. Un millón de copias, todas despiertas, sin dormir, y lo que aprende una lo saben todas al instante.');
+    tl.to(0.5, { co: 1, pt: 0, ck: 0.1, caz: 0.04 });
+    tl.to(2.2, { ck: 1, caz: 0.25, ola: 1.2, h: 19 });
+    tl.to(1.8, { caz: 0.42, ola: 2.6, h: 21 });
+    tl.label('ideas').caption(5.4, 'Ideas que nadie ha pensado', 'Leerían en una tarde todo lo que hemos escrito. Y después seguirían: ideas más allá del borde de lo que alguna vez pensó una persona.');
+    tl.to(1.8, { gal: 1, co: 0, caz: 0.6, d: 1.32, ola: 3.6 });
+    tl.to(3.6, { nu: 1, caz: 0.95, d: 1.55, h: 23 });
+    tl.label('todos').caption(4.6, 'Más que todos nosotros', 'Todo lo que ha pensado la humanidad entera sería ese núcleo blanco. Alrededor, lo nuevo. Juntas, esas mentes pensarían más que todos nosotros juntos.');
+    tl.to(4.6, { mar: 1, d: 2.02, caz: 1.3, h: 25.2 });
+    tl.label('muro');
+    tl.with(0.7, { muro: 1 });
+    tl.to(2.0, { d: 2.06, caz: 1.45 });
+    tl.with(0.6, { muro: 0 });
+    tl.label('horizonte').caption(6.9, 'El horizonte', 'Si cada vuelta dura menos que la anterior, llega un momento en que todo pasa a la vez. Adelante hay un borde. Desde aquí no se ve lo que sigue.');
+    tl.to(0.6, { cos: 0, pt: 1, d: 2.12, caz: 1.5 });
+    tl.to(0.5, { red: 1, pt: 0, t: 3.25, az: 2.2 });
+    tl.to(1.2, { t: 4.2, az: 2.5, h: 26 });
+    tl.to(0.9, { t: 5.2, az: 2.75, h: 26.6 });
+    tl.to(0.7, { t: 6.1, az: 2.95, hz: 0.12, h: 27 });
+    tl.to(1.5, { t: 6.95, az: 3.18, hz: 0.62 });
+    // The last light comes up inside the dark before the dark is all there is.
+    tl.to(1.3, { t: 7.6, az: 3.36, hz: 1, fin: 1 });
+    tl.wait(0.2);
+    const EN = { rapido: tl.at('rapido'), copias: tl.at('copias'), ideas: tl.at('ideas') };
+
+    const pos = V();
+    const at = V();
+    const O = V();
+    const dir = V();
+    const lejos = V(0, 0, 3.2);
+    const lejosAt = V(0, 0.4, -6);
+    const scr = { x: 0, y: 0, z: 0 };
+    const NUCLEO = V(0, -R * 0.55, 0);
+    const NUEVO = V(0, 30, 0);
+
+    return {
+      tl,
+      luzEntrada: MAQUINA.clone(),
+      luzSalida: new THREE.Color(0.85, 0.92, 1),
+      cuenta(p): Cuenta {
+        if (tl.get('hz', p) > 0.55) return { pisos: ['?'], linea: 'conexiones · nadie lo sabe', h: 27 };
+        const h = tl.get('h', p);
+        const linea = p < EN.rapido ? 'si se mejora a sí misma' : p < EN.copias ? 'un millón de veces más rápida' : p < EN.ideas ? 'un millón de copias' : 'si la curva sigue';
+        return { pisos: ['10', String(Math.floor(h + 0.001))], linea: 'conexiones · ' + linea, h };
+      },
+      rotulo(p): Rotulo | null {
+        const cp = tl.captionAt(p);
+        return cp ? { capitulo: CAP, name: cp.name, fact: cp.fact } : null;
+      },
+      placa(g, f) {
+        const { p, W, H, u } = f;
+        // 22 · how slow the drop falls for a mind like that: 9 m/s seen a million times slower.
+        const ll = tl.get('ll', p);
+        const k = ease(0.75, 1, tl.get('zoom', p)) * ll;
+        if (k > 0.02) {
+          proyectar(G, camera, W, H, scr);
+          const rad = (RADIO * f.focal) / Math.max(camera.position.distanceTo(G), 0.01);
+          nota(g, u, scr.x + rad * 0.78, scr.y - rad * 0.78, 'cae 9 milésimas de milímetro por segundo', 46, -36, k * 0.9, AZUL);
+        }
+        // 25 · which is which.
+        const m = tl.get('cos', p) * (1 - tl.get('muro', p));
+        const n1 = m * ease(0.7, 1, tl.get('nu', p));
+        if (n1 > 0.02) {
+          proyectar(NUCLEO, camera, W, H, scr);
+          nota(g, u, scr.x, scr.y, 'todo lo que hemos pensado', -40, 46, n1);
+          proyectar(NUEVO, camera, W, H, scr);
+          nota(g, u, scr.x, scr.y, 'lo que nadie había pensado', 44, -34, n1 * ease(0.1, 0.5, tl.get('mar', p)), ORO);
+        }
+        muro(g, u, W, H, 'Tercer muro', 'Superar', 'Decían que nunca iba a pensar mejor que quienes la hicieron. Nada en la física lo impide.', tl.get('muro', p));
+      },
+      update(f: Frame) {
+        const p = f.p;
+        const t = tl.get('t', p);
+        const hz = tl.get('hz', p);
+        const redes = tl.get('red', p);
+        const ll = tl.get('ll', p);
+        const cos = redes > 0.001 || ll > 0.001 ? 0 : tl.get('cos', p);
+        const pt = tl.get('pt', p);
+        const fin = tl.get('fin', p);
+        camera.fov = 46;
+        camera.up.set(0, 1, 0);
+
+        // ---- where the camera is.
+        const T = tl.get('T', p);
+        const zoom = tl.get('zoom', p);
+        G.set(AQUI.x, AQUI.y + (T1 - T) * CAE, AQUI.z);
+        if (redes > 0.001) {
+          camera.near = 0.02;
+          camera.far = 400;
+          const az = tl.get('az', p) + f.time * 0.015;
+          pos.set(Math.sin(az) * 2.3, 0.5, Math.cos(az) * 2.3);
+          mirar(camera, pos, O);
+        } else if (ll > 0.001) {
+          camera.near = 0.01;
+          camera.far = 200;
+          const k = ease(0, 1, zoom);
+          const mas = Math.max(0, zoom - 1);
+          pos.set(AQUI.x - 0.03, AQUI.y + 0.02, AQUI.z + 0.36 - mas * 2).lerp(lejos, 1 - Math.min(1, k));
+          at.copy(AQUI).lerp(lejosAt, 1 - Math.min(1, k));
+          mirar(camera, pos, at);
+        } else {
+          camera.near = 0.05;
+          camera.far = 4000;
+          const az = tl.get('caz', p) + 0.03 * Math.sin(f.time * 0.07);
+          const d = Math.pow(10, tl.get('d', p));
+          pos.set(Math.sin(az) * Math.cos(0.2), Math.sin(0.2), Math.cos(az) * Math.cos(0.2)).multiplyScalar(d);
+          mirar(camera, pos, O);
+        }
+        camera.updateMatrixWorld();
+
+        // ---- the nets.
+        const escala = Math.pow(1 / S, t);
+        mundo.visible = redes > 0.001;
+        mundo.scale.setScalar(escala);
+        for (let k = 0; k <= NIVELES; k++) {
+          const n = nubes[k];
+          enfocar(n, f.focal, f.dpr, f.time);
+          n.u.uEscalaMundo.value = escala;
+          n.u.uMaxPx.value = 16 * f.dpr;
+          // A level goes out as the fall enters one of its lights, and is not there while its net is one far light.
+          const sale = 1 - ease(k - 0.25, k + 0.45, t);
+          const entra = ease(k - 2.3, k - 1.7, t);
+          n.u.uGain.value = 1.15 * sale * entra * redes;
+          n.points.visible = sale * entra > 0.002;
+          if (k === 0) n.u.uMinPx.value = 3 * f.dpr;
+          const h = hilos[k];
+          if (h) {
+            h.mat.opacity = 0.16 * ease(k - 2.0, k - 1.0, t) * sale * redes;
+            h.l.visible = h.mat.opacity > 0.002;
+          }
+        }
+        borde.mesh.visible = hz > 0.001;
+        borde.u.uR.value = 0.006 + 1.25 * Math.pow(hz, 2.4);
+        borde.u.uA.value = ease(0, 0.12, hz);
+        borde.u.uLuz.value = 1 - 0.8 * ease(0.45, 0.95, hz);
+
+        // ---- the rain.
+        LL.visible = ll > 0.001;
+        if (LL.visible) {
+          const ritmo = Math.max(0, (tl.get('T', p + 0.03) - tl.get('T', p - 0.03)) / 0.06);
+          const hasta = tl.get('rayo', p);
+          const luzRayo = ease(0.02, 0.3, hasta);
+          enfocar(lluvia, f.focal, f.dpr, f.time);
+          lluvia.u.uT.value = T;
+          lluvia.u.uMaxPx.value = 9 * f.dpr;
+          // Falling, a drop is its streak; still, it is a point of light.
+          lluvia.u.uGain.value = ll * (0.25 + 0.95 * (1 - ease(0, 0.5, ritmo))) * (1 + 0.5 * luzRayo);
+          estela.uniforms.uT.value = T;
+          estela.uniforms.uMirada.value = ritmo * 0.045;
+          estela.uniforms.uLuz.value = ll * 0.5 * ease(0.02, 0.4, ritmo);
+          estelas.visible = ritmo > 0.02;
+          proyectar(G, camera, f.W, f.H, scr);
+          const hondo = Math.max(camera.position.distanceTo(G), 0.01);
+          const visible = scr.z < 1 && scr.y > -f.H * 0.3 ? 1 : 0;
+          (cristal.u.uC.value as THREE.Vector2).set(((scr.x / f.W - 0.5) * f.W) / f.H, 0.5 - scr.y / f.H);
+          cristal.u.uR.value = (RADIO * f.focal) / hondo / f.H;
+          cristal.u.uA.value = ll * visible * ease(0.05, 0.5, zoom);
+          cristal.u.uRayo.value = luzRayo * hasta;
+          luzGota.points.position.copy(G);
+          enfocar(luzGota, f.focal, f.dpr, f.time);
+          luzGota.u.uMinPx.value = 3 * f.dpr;
+          luzGota.u.uMaxPx.value = 220 * f.dpr;
+          luzGota.u.uGain.value = ll * 1.1 * (1 - ease(0.05, 0.4, zoom));
+          enfocar(rayo, f.focal, f.dpr, f.time);
+          rayo.u.uHasta.value = hasta;
+          rayo.u.uMaxPx.value = 14 * f.dpr;
+          rayo.u.uGain.value = 1.5 * ll;
+        }
+
+        // ---- the sky of ideas.
+        const co = tl.get('co', p) * cos;
+        copias.points.visible = co > 0.001;
+        enfocar(copias, f.focal, f.dpr, f.time);
+        copias.u.uK.value = tl.get('ck', p);
+        copias.u.uOla.value = tl.get('ola', p) + f.time * 0.05;
+        copias.u.uMaxPx.value = 10 * f.dpr;
+        copias.u.uGain.value = co * 0.8 * (0.2 + 0.8 * ease(0.1, 0.7, tl.get('ck', p)));
+        const gal = tl.get('gal', p) * cos;
+        estrellas.points.visible = niebla.points.visible = gal > 0.001;
+        enfocar(estrellas, f.focal, f.dpr, f.time);
+        estrellas.u.uGain.value = gal * 0.6;
+        estrellas.u.uMinPx.value = 2.4 * f.dpr;
+        estrellas.u.uMaxPx.value = 14 * f.dpr;
+        enfocar(niebla, f.focal, f.dpr, f.time);
+        niebla.u.uMaxPx.value = 90 * f.dpr;
+        niebla.u.uGain.value = gal * 0.24;
+        const nu = tl.get('nu', p);
+        cerca.points.visible = cos > 0.001 && nu > 0.001;
+        enfocar(cerca, f.focal, f.dpr, f.time);
+        cerca.u.uNace.value = nu;
+        cerca.u.uMinPx.value = 2 * f.dpr;
+        cerca.u.uMaxPx.value = 12 * f.dpr;
+        cerca.u.uGain.value = cos * 1.0;
+        const ma = tl.get('mar', p);
+        mar.points.visible = cos > 0.001 && ma > 0.001;
+        enfocar(mar, f.focal, f.dpr, f.time);
+        mar.u.uNace.value = ma;
+        mar.u.uMinPx.value = 2 * f.dpr;
+        mar.u.uMaxPx.value = 12 * f.dpr;
+        mar.u.uGain.value = cos * 0.75;
+
+        // ---- the point between places and at the end, always in the middle of the frame.
+        const luz = Math.max(ease(0, 1, pt), ease(0.2, 1, fin));
+        punto.points.visible = luz > 0.001;
+        camera.getWorldDirection(dir);
+        punto.points.position.copy(camera.position).addScaledVector(dir, 2);
+        enfocar(punto, f.focal, f.dpr, f.time);
+        punto.u.uMinPx.value = (4.5 + 5.5 * ease(0, 1, pt)) * f.dpr;
+        punto.u.uGain.value = 2.6 * luz;
+      },
+      dispose() {},
+    };
+  },
+};

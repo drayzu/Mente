@@ -1,0 +1,429 @@
+import * as THREE from 'three';
+import { Timeline } from './timeline';
+import { enfocar, materia, materiaBuilder } from '../src/engine/materia';
+import { gauss } from '../src/engine/math';
+import { grupo, muro, nota, proyectar, type Cuenta, type Rotulo } from './placa';
+import { CORAL, ease, logLerp, MAQUINA, ORO3, SEGURO, V } from './comun';
+import { altura, descenso, LZ, valle } from './cordillera';
+import type { Escena, Frame, Instancia } from './tipos';
+import datos from '../src/datos/red.json';
+
+/**
+ * Act II · a machine that learns (moments 7–10). A new net: lights joined by threads, every thread
+ * a number set at random; asked for a picture, it gives static. Every way of setting those numbers
+ * is a place in a landscape, as high as the net is wrong there. Learning is going down. While the
+ * ball of light (the net) rides down the range, what the net draws hangs in the sky and turns from
+ * static into an eye. Then the same recipe with more threads, up to today's models: the first wall.
+ *
+ * The picture and its error are real: a net of 21 793 numbers trained by descent on one picture,
+ * recorded step by step (tools/red.py). The range is the study's: a drawing of that descent, not a
+ * measurement (a real one has as many directions as the net has numbers).
+ */
+
+const CAP = 'II · Una máquina que aprende';
+const LUZ = new THREE.Color(1.0, 0.93, 0.78);
+const CAPAS = 6;
+const LADO = 8;
+const H_RED = Math.log10(datos.conexiones);
+
+/** Where a light of the small net is: layer c, row i, column j. */
+const nodo = (c: number, i: number, j: number, out: THREE.Vector3) => out.set(-1.5 + c * 0.6, (i - 3.5) * 0.2, (j - 3.5) * 0.2);
+
+/** The new net: layers of lights and, between each two layers, threads set at random. */
+function redChica() {
+  const b = materiaBuilder(41);
+  const r = b.r;
+  const hilo: number[] = [];
+  const A = V();
+  const B = V();
+  for (let c = 0; c < CAPAS; c++)
+    for (let i = 0; i < LADO; i++)
+      for (let j = 0; j < LADO; j++) {
+        nodo(c, i, j, A);
+        b.push(A.x, A.y, A.z, MAQUINA, 0.05, 1.1, { kind: c / (CAPAS - 1) });
+        hilo.push(1, r(), 1);
+        if (c === CAPAS - 1) continue;
+        for (let k = 0; k < 5; k++) {
+          nodo(c + 1, Math.floor(r() * LADO), Math.floor(r() * LADO), B);
+          // A thread's number: most are faint, a few are strong.
+          const peso = Math.pow(r(), 2.2);
+          const fase = r();
+          const n = 44;
+          for (let q = 1; q < n; q++) {
+            const f = (q + r() * 0.6) / n;
+            b.push(A.x + (B.x - A.x) * f, A.y + (B.y - A.y) * f, A.z + (B.z - A.z) * f, MAQUINA, 0.009, 0.55, { kind: (c + f) / (CAPAS - 1) });
+            hilo.push(peso, fase, 0);
+          }
+        }
+      }
+  return { data: b.data(), hilo: new Float32Array(hilo) };
+}
+
+/** The same net with more threads: every light of the small one opens into a block of lights. */
+const G = { capas: 42, lado: 58, x: 84, yz: 58 };
+function redGrande() {
+  const b = materiaBuilder(43);
+  const r = b.r;
+  const A = V();
+  const c = new THREE.Color();
+  for (let l = 0; l < G.capas; l++)
+    for (let i = 0; i < G.lado; i++)
+      for (let j = 0; j < G.lado; j++) {
+        nodo(Math.floor((l * CAPAS) / G.capas), Math.floor((i * LADO) / G.lado), Math.floor((j * LADO) / G.lado), A);
+        const x = (l / (G.capas - 1) - 0.5) * G.x;
+        const y = (i / (G.lado - 1) - 0.5) * G.yz;
+        const z = (j / (G.lado - 1) - 0.5) * G.yz;
+        const lejos = Math.hypot(x / G.x, y / G.yz, z / G.yz) * 1.2;
+        c.copy(MAQUINA).lerp(ORO3, r() < 0.04 ? 0.9 : 0.0);
+        b.push(x + gauss(r) * 0.12, y + gauss(r) * 0.12, z + gauss(r) * 0.12, c, 0.2, 1, {
+          from: [A.x + gauss(r) * 0.012, A.y + gauss(r) * 0.012, A.z + gauss(r) * 0.012],
+          delay: Math.min(1, lejos * 0.75 + 0.25 * r()),
+          kind: l / (G.capas - 1),
+        });
+      }
+  return b.data();
+}
+
+/** Every recorded frame of what the net draws, side by side in one texture. */
+function cuadros() {
+  const L = datos.lado;
+  const n = datos.pasos.length;
+  const cols = 8;
+  const filas = Math.ceil(n / cols);
+  const bin = atob(datos.cuadros);
+  const px = new Uint8Array(cols * L * filas * L);
+  for (let k = 0; k < n; k++)
+    for (let y = 0; y < L; y++)
+      for (let x = 0; x < L; x++) px[(Math.floor(k / cols) * L + y) * cols * L + (k % cols) * L + x] = bin.charCodeAt(k * L * L + y * L + x);
+  const tex = new THREE.DataTexture(px, cols * L, filas * L, THREE.RedFormat, THREE.UnsignedByteType);
+  tex.needsUpdate = true;
+  return { tex, n, cols, filas, L };
+}
+
+export const acto2: Escena = {
+  id: 'acto2',
+  nombre: 'Una máquina que aprende',
+  estilos: [{ key: '1', nombre: 'El acto', nota: 'Una red recién hecha, la bajada por la cordillera del error con su dibujo en el cielo, y la misma receta con más hilos.' }],
+  montar(stage): Instancia {
+    const root = stage.root;
+    const { camera } = stage;
+    stage.bloom.strength = 0.55;
+    stage.bloom.radius = 0.6;
+    stage.bloom.threshold = 0.4;
+
+    // ---- The range, and the way down it.
+    const M = 1600;
+    const camino = descenso(M);
+    const en = (s: number, out: THREE.Vector3) => {
+      const q = Math.min(M - 1.001, Math.max(0, s * (M - 1)));
+      const i = Math.floor(q);
+      const f = q - i;
+      return out.set(camino[i * 3] + (camino[i * 3 + 3] - camino[i * 3]) * f, camino[i * 3 + 1] + (camino[i * 3 + 4] - camino[i * 3 + 1]) * f, camino[i * 3 + 2] + (camino[i * 3 + 5] - camino[i * 3 + 2]) * f);
+    };
+    const H0 = camino[1];
+    const sb = materiaBuilder(31);
+    const c = new THREE.Color();
+    for (let i = 0; i < 340000; i++) {
+      // Half of the dust lies near the valley, where the ride passes close.
+      const z = 14 + sb.r() * (-LZ - 26 - 14);
+      const x = i % 2 ? (sb.r() * 2 - 1) * 36 : valle(z) + (sb.r() + sb.r() + sb.r() - 1.5) * 9;
+      const h = altura(x, z);
+      c.copy(ORO3).lerp(CORAL, Math.min(1, h / 17));
+      sb.push(x, h, z, c, 0.05, i % 2 ? 0.5 : 0.28);
+    }
+    const suelo = materia(sb.data());
+    suelo.u.uFog.value = 46;
+    root.add(suelo.points);
+
+    const tb = materiaBuilder(7);
+    for (let i = 0; i < M; i++) tb.push(camino[i * 3], camino[i * 3 + 1] + 0.04, camino[i * 3 + 2], ORO3, 0.07, 1.3, { kind: i / (M - 1) });
+    const rastro = materia(tb.data(), {
+      pre: /* glsl */ `uniform float uS;`,
+      move: /* glsl */ `
+        float atras = uS - aKind;
+        em *= atras > 0.0 ? exp(-atras * 9.0) : 0.0;
+        fuente = 1.0;`,
+      uniforms: { uS: { value: 0 } },
+    });
+    rastro.u.uFog.value = 60;
+    root.add(rastro.points);
+    const ub = materiaBuilder(2);
+    ub.push(0, 0, 0, LUZ, 0.3, 1);
+    const bola = materia(ub.data());
+    bola.u.uFuente.value = 1;
+    root.add(bola.points);
+
+    // ---- 7 · the new net.
+    const RC = redChica();
+    const red = materia(RC.data, {
+      pre: /* glsl */ `attribute vec3 aHilo; uniform float uOrden; uniform vec3 uLuz;`,
+      move: /* glsl */ `
+        // Signals go through, each thread in its own time: nothing agrees with anything yet.
+        float x = (fract(aKind * 1.7 - uTime * 0.21 + aHilo.y) - 0.5) / 0.07;
+        float pulso = exp(-x * x) * (1.0 - aHilo.z);
+        float chispa = aHilo.z * (0.55 + 0.45 * sin(uTime * (1.0 + 3.0 * seed) + seed * 60.0));
+        em *= mix(0.07 + 0.9 * aHilo.x, chispa, aHilo.z);
+        em += uLuz * pulso * (0.25 + 0.75 * aHilo.x) * 0.9;
+        sz *= 1.0 + 0.9 * pulso;`,
+      uniforms: { uOrden: { value: 0 }, uLuz: { value: LUZ.clone() } },
+      extra: { aHilo: [RC.hilo, 3] },
+    });
+    root.add(red.points);
+
+    // ---- What the net draws: one point for every quarter of a pixel.
+    const CU = cuadros();
+    const pb = materiaBuilder(5);
+    const pix: number[] = [];
+    const LP = CU.L * 2;
+    for (let j = 0; j < LP; j++)
+      for (let i = 0; i < LP; i++) {
+        pb.push((i + 0.5) / LP - 0.5, 0.5 - (j + 0.5) / LP, 0, 0xffffff, 1.5 / LP, 1);
+        pix.push((Math.floor(i / 2) + 0.5) / CU.L, (Math.floor(j / 2) + 0.5) / CU.L);
+      }
+    const panel = materia(pb.data(), {
+      pre: /* glsl */ `
+        attribute vec2 aPix;
+        uniform sampler2D uCuadros;
+        uniform float uCuadro, uTono;
+        uniform vec3 uFrio, uCalido;
+        ${SEGURO}
+        float lee(float n) {
+          vec2 t = vec2(mod(n, ${CU.cols}.0), floor(n / ${CU.cols}.0));
+          return texture2D(uCuadros, (t + aPix) / vec2(${CU.cols}.0, ${CU.filas}.0)).r;
+        }`,
+      move: /* glsl */ `
+        float a = floor(uCuadro);
+        float v = mix(lee(a), lee(min(a + 1.0, ${CU.n - 1}.0)), uCuadro - a);
+        em = mix(uFrio, uCalido, uTono) * pw(v, 1.6) * (0.9 + 0.1 * sin(uTime * (1.0 + 2.0 * seed) + seed * 50.0));`,
+      uniforms: { uCuadros: { value: CU.tex }, uCuadro: { value: 0 }, uTono: { value: 0 }, uFrio: { value: MAQUINA.clone() }, uCalido: { value: new THREE.Color(1.0, 0.9, 0.7) } },
+      extra: { aPix: [new Float32Array(pix), 2] },
+    });
+    root.add(panel.points);
+    const CIELO = V(valle(-LZ), 25, -LZ - 112);
+    const T_CIELO = 50;
+
+    // ---- 10 · the same recipe, with more threads.
+    const gran = materia(redGrande(), {
+      pre: /* glsl */ `uniform vec3 uLuz;`,
+      move: /* glsl */ `
+        // Light goes through it layer by layer, in waves.
+        float x = (fract(aKind * 1.6 - uTime * 0.11 + 0.05 * sin(p.y * 0.21 + uTime * 0.3) + 0.05 * sin(p.z * 0.17)) - 0.5) / 0.09;
+        float ola = exp(-x * x);
+        em = em * (0.22 + 0.5 * ola) + uLuz * ola * ola * 0.7 * step(0.6, seed);
+        sz *= 1.0 + 0.5 * ola;`,
+      uniforms: { uLuz: { value: LUZ.clone() } },
+    });
+    gran.u.uSpread.value = 1.6;
+    root.add(gran.points);
+    const fb = materiaBuilder(3);
+    fb.push(0, 0, 0, MAQUINA, 0.02, 1);
+    const fin = materia(fb.data());
+    fin.u.uFuente.value = 1;
+    root.add(fin.points);
+
+    const tl = new Timeline();
+    // orb: 1 the camera turns round the net (at 10^D, from az, el), 0 it is in the range; alto: 1 the
+    // range from above, 0 riding behind the ball; s: how far down the ball is; sr: log10 of the small
+    // net's size; vuela: the picture, from beside the net (0) to the sky (1); k: the net's growth.
+    tl.set({ orb: 1, D: 0.74, az: 0.5, el: 0.1, s: 0, alto: 1, gira: 0, sr: 0, red: 1, vuela: 0, pan: 1, suelo: 0, bola: 0, mira: 0, gran: 0, k: 0, h: H_RED, muro: 0, fin: 0, n1: 0, n2: 0 });
+    tl.label('azar').caption(5.4, 'Números al azar', 'Ahora otra cosa. Esto no nació: lo armaron. Luces unidas por hilos, y en cada hilo un número puesto al azar. Le piden un dibujo y devuelve ruido.');
+    tl.to(1.4, { az: 0.72, D: 0.66 });
+    tl.with(0.6, { n1: 1 });
+    tl.to(1.6, { az: 0.95 });
+    tl.with(0.5, { n1: 0 });
+    tl.with(0.6, { n2: 1 });
+    tl.to(1.6, { az: 1.16, el: 0.16 });
+    tl.with(0.5, { n2: 0 });
+    tl.to(0.8, { az: 1.24 });
+    tl.label('error').caption(4.8, 'El error', 'Cada manera de poner esos números es un lugar de este paisaje. La altura es cuánto se equivoca. Recién hecha, está arriba de todo: esa luz es ella.');
+    tl.with(1.8, { sr: -2.3 });
+    tl.with(2.2, { red: 0 });
+    tl.with(2.6, { vuela: 1 });
+    tl.with(1.6, { bola: 1 });
+    tl.to(2.6, { orb: 0, suelo: 1, gira: 0.45 });
+    tl.to(2.2, { gira: 1, s: 0.01 });
+    tl.label('bajar').caption(4.6, 'Bajar', 'No ve el mapa. Solo siente hacia dónde cae el suelo, y da un paso. Eso es aprender: bajar.');
+    tl.to(1.4, { alto: 0, s: 0.06 });
+    tl.to(3.2, { s: 0.42 });
+    tl.label('forma').caption(4.6, 'Del ruido a la forma', 'Mira el cielo: es lo que dibuja ahora. Con cada paso, el ruido se parece un poco más a algo.');
+    tl.to(4.6, { s: 0.95 });
+    tl.label('nadie').caption(4.4, 'Nadie le dijo cómo', 'Abajo dibuja un ojo. Nadie le explicó qué es un ojo. Solo le dijeron, millones de veces, cuánto se equivocaba.');
+    tl.to(1.8, { s: 1, mira: 1 });
+    tl.to(2.6, { mira: 1.6 });
+    tl.label('receta').caption(3.8, 'La misma receta', 'Durante cincuenta años, casi nadie creyó que esto fuera a servir.');
+    tl.set({ az: 0.3, el: 0.12, D: 1.2 });
+    tl.with(1.6, { pan: 0, suelo: 0 });
+    tl.with(1.4, { sr: 0, red: 1, bola: 0 });
+    tl.to(3.8, { orb: 1, mira: 0, D: 0.68, az: 0.6 });
+    tl.label('hilos').caption(5.8, 'Más hilos', 'Después le dieron más hilos. Mil millones, como una abeja. Un billón.');
+    tl.with(0.9, { gran: 1 });
+    tl.with(1.4, { red: 0 });
+    tl.to(4.6, { k: 1, D: 2.28, az: 1.25, el: 0.2, h: 12 });
+    tl.label('muro');
+    tl.with(0.8, { muro: 1 });
+    tl.to(2.2, { az: 1.5, D: 2.36 });
+    tl.with(0.7, { muro: 0 });
+    tl.to(2.0, { D: 4.3, fin: 1, az: 1.62 });
+    tl.wait(0.6);
+
+    const tramo = (a: number, b: number, p: number, m = 0.5) => ease(a, a + m, p) * (1 - ease(b - m, b, p));
+    const B = V();
+    const pos = V();
+    const at = V();
+    const arriba = V();
+    const centro = V();
+    const orbita = V();
+    const lugar = V();
+    const scr = { x: 0, y: 0, z: 0 };
+    const cuadroDe = (s: number) => (CU.n - 1) * Math.pow(Math.min(1, s / 0.95), 1.15);
+    const errorDe = (q: number) => {
+      const i = Math.min(CU.n - 2, Math.floor(q));
+      return datos.error[i] + (datos.error[i + 1] - datos.error[i]) * (q - i);
+    };
+
+    return {
+      tl,
+      luzEntrada: MAQUINA.clone(),
+      luzSalida: MAQUINA.clone(),
+      cuenta(p): Cuenta | null {
+        const h = tl.get('h', p);
+        const a = ease(0.9, 1.6, p);
+        if (h < H_RED + 0.02) {
+          const linea = p < tl.at('bajar') ? 'conexiones · una red recién hecha' : p < tl.at('nadie') ? 'conexiones · una red que aprende' : 'conexiones · una red que aprendió';
+          return { pisos: [grupo(datos.conexiones)], linea, h, a };
+        }
+        if (h < 6) {
+          const n = Math.pow(10, h);
+          const paso = Math.pow(10, Math.floor(h) - 1);
+          return { pisos: [grupo(Math.round(n / paso) * paso)], linea: 'conexiones · la misma receta', h };
+        }
+        return { pisos: ['10', String(Math.floor(h + 1e-6))], linea: h > 11.99 ? 'conexiones · los modelos de hoy' : 'conexiones · la misma receta', h };
+      },
+      rotulo(p): Rotulo | null {
+        const cp = tl.captionAt(p);
+        return cp ? { capitulo: CAP, name: cp.name, fact: cp.fact } : null;
+      },
+      placa(g, f) {
+        const p = f.p;
+        const n1 = tl.get('n1', p);
+        if (n1 > 0.02) {
+          proyectar(lugar.copy(B).add(nodo(2, 6, 4, at)), camera, f.W, f.H, scr);
+          nota(g, f.u, scr.x, scr.y, 'cada hilo, un número al azar', -60, -70, n1);
+        }
+        const n2 = tl.get('n2', p);
+        if (n2 > 0.02) {
+          proyectar(panel.points.position, camera, f.W, f.H, scr);
+          nota(g, f.u, scr.x + 60 * f.u, scr.y - 60 * f.u, 'lo que dibuja', 50, -60, n2);
+        }
+        // The error where the ball is, written beside it (the net's real error at that step).
+        const a = tramo(tl.at('error') + 2.4, tl.at('receta') + 0.6, p);
+        if (a > 0.02) {
+          proyectar(B, camera, f.W, f.H, scr);
+          if (scr.z < 1 && scr.x > 0 && scr.x < f.W) nota(g, f.u, scr.x, scr.y, `error ${errorDe(cuadroDe(tl.get('s', p))).toFixed(3).replace('.', ',')}`, 46, -40, 0.9 * a);
+        }
+        muro(g, f.u, f.W, f.H, 'Primer muro', 'Aprender', 'Decían que una máquina solo hace lo que alguien le escribió. A esta nadie le escribió cómo.', tl.get('muro', p));
+      },
+      update(f: Frame) {
+        const p = f.p;
+        const s = tl.get('s', p);
+        const alto = ease(0, 1, tl.get('alto', p));
+        const orb = ease(0, 1, tl.get('orb', p));
+        const mira = tl.get('mira', p);
+        camera.near = 0.02;
+        camera.far = 200000;
+        camera.fov = 52 - 10 * orb;
+        en(s, B);
+        B.y += 0.16;
+
+        // Riding: a little behind and above the ball, looking where it goes.
+        en(s - 0.016, pos);
+        pos.y = Math.max(pos.y, altura(pos.x, pos.z)) + 0.75;
+        en(s + 0.03, at);
+        at.y += 0.1;
+        // At the bottom it looks up, at what the net draws now.
+        const m = ease(0, 1, mira);
+        at.lerp(CIELO, m * 0.92);
+        pos.y += 1.6 * m + 1.2 * ease(1, 1.6, mira);
+        // From above: the whole range, turning slowly.
+        const gi = 0.5 + 0.35 * tl.get('gira', p);
+        arriba.set(valle(0) + 30 * Math.sin(gi), H0 + 15, 16 + 12 * Math.cos(gi));
+        centro.set(0, 7, -52);
+        pos.lerp(arriba, alto);
+        at.lerp(centro, alto);
+        // Round the net.
+        const D = Math.pow(10, tl.get('D', p));
+        const az = tl.get('az', p) + f.time * 0.01;
+        const el = tl.get('el', p);
+        orbita.set(Math.sin(az) * Math.cos(el), Math.sin(el), Math.cos(az) * Math.cos(el)).multiplyScalar(D).add(B);
+        pos.lerp(orbita, orb);
+        at.lerp(B, orb);
+        camera.position.copy(pos);
+        camera.up.set(0, 1, 0);
+        camera.lookAt(at);
+
+        const su = tl.get('suelo', p);
+        suelo.points.visible = rastro.points.visible = su > 0.001;
+        enfocar(suelo, f.focal, f.dpr, f.time);
+        suelo.u.uMinPx.value = (1.6 + 0.8 * alto) * f.dpr;
+        suelo.u.uMaxPx.value = 7 * f.dpr;
+        suelo.u.uGain.value = su * (1.0 + 2.4 * alto);
+        enfocar(rastro, f.focal, f.dpr, f.time);
+        rastro.u.uS.value = s;
+        rastro.u.uMaxPx.value = 12 * f.dpr;
+        rastro.u.uGain.value = su;
+        const bo = tl.get('bola', p);
+        bola.points.visible = bo > 0.001;
+        bola.points.position.copy(B);
+        enfocar(bola, f.focal, f.dpr, f.time);
+        bola.u.uMinPx.value = 5 * f.dpr;
+        bola.u.uMaxPx.value = 46 * f.dpr;
+        bola.u.uGain.value = 2.4 * bo;
+
+        const re = tl.get('red', p);
+        const sr = Math.pow(10, tl.get('sr', p));
+        red.points.visible = re > 0.001;
+        red.points.position.copy(B);
+        red.points.scale.setScalar(sr);
+        enfocar(red, f.focal, f.dpr, f.time);
+        red.u.uSizeUnit.value = sr;
+        red.u.uMaxPx.value = 16 * f.dpr;
+        red.u.uGain.value = re;
+
+        // The picture: beside the net at first, then in the sky beyond the valley.
+        const vu = ease(0, 1, tl.get('vuela', p));
+        const pa = tl.get('pan', p);
+        const q = cuadroDe(s);
+        const t = logLerp(1.25, T_CIELO, vu);
+        panel.points.visible = pa > 0.001;
+        panel.points.position.set(B.x + 2.5, B.y + 0.1, B.z - 0.6).lerp(CIELO, vu);
+        panel.points.rotation.y = 0.75 * (1 - vu);
+        panel.points.scale.setScalar(t);
+        enfocar(panel, f.focal, f.dpr, f.time);
+        panel.u.uSizeUnit.value = t;
+        panel.u.uMaxPx.value = 40 * f.dpr;
+        panel.u.uCuadro.value = q;
+        panel.u.uTono.value = ease(8, 30, q);
+        panel.u.uGain.value = pa * (0.5 + 0.35 * ease(10, 34, q));
+
+        const gr = tl.get('gran', p);
+        const k = tl.get('k', p);
+        gran.points.visible = gr > 0.001;
+        gran.points.position.copy(B);
+        enfocar(gran, f.focal, f.dpr, f.time);
+        gran.u.uK.value = k;
+        gran.u.uMaxPx.value = 10 * f.dpr;
+        // Folded into the small net, every light is hundreds of points: hold them down.
+        gran.u.uGain.value = gr * logLerp(0.012, 0.8, ease(0, 0.8, k)) * (1 - ease(0.55, 1, tl.get('fin', p)));
+        const fi = tl.get('fin', p);
+        fin.points.visible = fi > 0.001;
+        fin.points.position.copy(B);
+        enfocar(fin, f.focal, f.dpr, f.time);
+        fin.u.uMinPx.value = 4.5 * f.dpr;
+        fin.u.uGain.value = 2.6 * ease(0.4, 1, fi);
+      },
+      dispose() {
+        CU.tex.dispose();
+      },
+    };
+  },
+};

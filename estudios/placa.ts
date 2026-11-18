@@ -1,0 +1,381 @@
+import * as THREE from 'three';
+import { clamp, smoothstep } from '../src/engine/math';
+
+/**
+ * Mente's plate: everything drawn in 2D over the film, in device pixels, so a capture holds it.
+ * - The count (bottom left): how many connections, as a power of ten.
+ * - The ladder (right): powers of ten of connections, with the minds we can count on it (the worm,
+ *   the bee, the mouse, today's models, you, all of us). Solid where counted, dashed where
+ *   estimated, dotted beyond.
+ */
+
+export const FONT = {
+  serif: (px: number) => `${px}px "Instrument Serif"`,
+  italic: (px: number) => `italic ${px}px "Instrument Serif"`,
+  mono: (px: number) => `500 ${px}px "Geist Mono Variable"`,
+  sans: (px: number) => `500 ${px}px "Geist Variable"`,
+};
+
+/** The work's colour in the series (proposed, phase 0): a soft gold, an idea lighting up. */
+export const ORO = '#ffd58a';
+export const oro = (a = 1) => `rgba(255,213,138,${a})`;
+export const ink = (a = 1) => `rgba(236,231,219,${a})`;
+
+export const grupo = (n: number) => String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+
+/** A count as tower floors, from its log10: 3.85 → ['7 080'], 14.5 → ['10', '14']. */
+export function pisos(l: number): string[] {
+  if (l < 6) return [grupo(Math.pow(10, l))];
+  return ['10', String(Math.floor(l))];
+}
+
+// ---------------------------------------------------------------- drawing helpers
+
+export function proyectar(v: THREE.Vector3, camera: THREE.Camera, W: number, H: number, out = { x: 0, y: 0, z: 0 }) {
+  const p = v.clone().project(camera);
+  out.x = ((p.x + 1) / 2) * W;
+  out.y = ((1 - p.y) / 2) * H;
+  out.z = p.z;
+  return out;
+}
+
+/** A power at (x, y): every floor smaller and raised over the one below. Returns its width. */
+export function torre(g: CanvasRenderingContext2D, x: number, y: number, floors: string[], px: number, color = ink()) {
+  let cx = x;
+  let cy = y;
+  let s = px;
+  g.fillStyle = color;
+  for (const [i, f] of floors.entries()) {
+    g.font = FONT.serif(s);
+    g.fillText(f, cx, cy);
+    cx += g.measureText(f).width + s * 0.03;
+    if (i < floors.length - 1) {
+      cy -= s * 0.42;
+      s *= 0.54;
+    }
+  }
+  return cx - x;
+}
+
+export function wrap(g: CanvasRenderingContext2D, text: string, maxW: number) {
+  const words = text.split(' ');
+  const lines: string[] = [];
+  let line = '';
+  for (const w of words) {
+    const test = line ? `${line} ${w}` : w;
+    if (g.measureText(test).width > maxW && line) {
+      lines.push(line);
+      line = w;
+    } else line = test;
+  }
+  if (line) lines.push(line);
+  return lines;
+}
+
+/** A line of text on the film (sans, or mono when `mono`), with a soft shadow. */
+export function texto(g: CanvasRenderingContext2D, u: number, x: number, y: number, s: string, color: string, alpha: number, px = 13, align: CanvasTextAlign = 'left', mono = true) {
+  if (alpha <= 0.01) return;
+  g.save();
+  g.globalAlpha = alpha;
+  g.font = mono ? FONT.mono(px * u) : FONT.sans(px * u);
+  g.letterSpacing = mono ? `${1.1 * u}px` : '0px';
+  g.textAlign = align;
+  g.textBaseline = 'middle';
+  g.shadowColor = 'rgba(0,0,0,0.9)';
+  g.shadowBlur = 10 * u;
+  g.fillStyle = color;
+  g.fillText(mono ? s.toUpperCase() : s, x, y);
+  g.restore();
+}
+
+/** A note: a dot on the thing, a leader out to (x + dx, y + dy), and its label. */
+export function nota(g: CanvasRenderingContext2D, u: number, x: number, y: number, text: string, dx: number, dy: number, alpha = 1, accent = ORO) {
+  if (alpha <= 0.01) return;
+  g.save();
+  g.globalAlpha = alpha;
+  const lx = x + dx * u;
+  const ly = y + dy * u;
+  g.strokeStyle = ink(0.55);
+  g.lineWidth = Math.max(1, u * 0.9);
+  g.beginPath();
+  g.moveTo(x, y);
+  g.lineTo(lx, ly);
+  g.stroke();
+  g.fillStyle = accent;
+  g.beginPath();
+  g.arc(x, y, 2.4 * u, 0, Math.PI * 2);
+  g.fill();
+  g.font = FONT.mono(10.5 * u);
+  g.letterSpacing = `${1.1 * u}px`;
+  const label = text.toUpperCase();
+  const w = g.measureText(label).width;
+  const tx = dx >= 0 ? lx + 6 * u : lx - 6 * u - w;
+  g.fillStyle = 'rgba(4,4,8,0.5)';
+  g.fillRect(tx - 5 * u, ly - 9 * u, w + 10 * u, 17 * u);
+  g.fillStyle = ink(0.92);
+  g.textBaseline = 'middle';
+  g.fillText(label, tx, ly + 0.5 * u);
+  g.restore();
+}
+
+// ---------------------------------------------------------------- the count
+
+export interface Rotulo {
+  /** «III · El espacio de los significados». */
+  capitulo?: string;
+  name: string;
+  fact: string;
+  /** 0–1: how much of `fact` is written so far (the voice that writes itself, from act III on). */
+  escrito?: number;
+}
+
+/** How much of a caption is written at `p`: a word every 0.09 beats, done by half its time at the latest. */
+export function escrito(cp: { from: number; to: number; fact: string }, p: number) {
+  const dur = Math.min((cp.to - cp.from) * 0.5, cp.fact.split(' ').length * 0.09);
+  return clamp((p - cp.from - 0.25) / Math.max(dur, 0.01), 0, 1);
+}
+
+/** What the clock reads: floors, a unit, a mono line, and the height on the ladder. */
+export interface Cuenta {
+  pisos: string[];
+  unidad?: string;
+  linea: string;
+  /** Ladder height: log10 of the connections. */
+  h: number;
+  a?: number;
+}
+
+/** The count at bottom left, with the moment's chapter, name and sentence above it. */
+export function cuenta(g: CanvasRenderingContext2D, u: number, H: number, c: Cuenta | null, cap: Rotulo | null, capAlpha = 1) {
+  const x = 44 * u;
+  g.save();
+  g.textBaseline = 'alphabetic';
+  g.shadowColor = 'rgba(0,0,0,0.85)';
+  g.shadowBlur = 12 * u;
+  if (cap && capAlpha > 0.01) {
+    g.globalAlpha = capAlpha;
+    if (cap.capitulo) {
+      g.font = FONT.mono(10.5 * u);
+      g.letterSpacing = `${1.6 * u}px`;
+      g.fillStyle = ORO;
+      g.fillText(cap.capitulo.toUpperCase(), x, H - 272 * u);
+      g.letterSpacing = '0px';
+    }
+    g.font = FONT.italic(31 * u);
+    g.fillStyle = ink();
+    g.fillText(cap.name, x, H - 236 * u);
+    g.font = FONT.sans(14 * u);
+    g.fillStyle = ink(0.62);
+    const lineas = wrap(g, cap.fact, 470 * u);
+    if (cap.escrito === undefined) lineas.forEach((line, i) => g.fillText(line, x, H - 208 * u + i * 20 * u));
+    else {
+      // Word by word; the newest word is still gold, like the thread that writes.
+      const total = cap.fact.split(' ').length;
+      const hasta = cap.escrito * total;
+      let n = 0;
+      lineas.forEach((line, i) => {
+        let cx = x;
+        for (const w of line.split(' ')) {
+          const edad = hasta - n++;
+          if (edad <= 0) return;
+          g.globalAlpha = capAlpha * Math.min(1, edad);
+          g.fillStyle = edad < 2 && cap.escrito! < 1 ? oro(0.95) : ink(0.62);
+          g.fillText(w, cx, H - 208 * u + i * 20 * u);
+          cx += g.measureText(w + ' ').width;
+        }
+      });
+    }
+    g.globalAlpha = 1;
+  }
+  if (c && (c.a ?? 1) > 0.01) {
+    g.globalAlpha = c.a ?? 1;
+    const w = torre(g, x, H - 86 * u, c.pisos, 66 * u);
+    if (c.unidad) {
+      g.font = FONT.serif(26 * u);
+      g.fillStyle = ink(0.6);
+      g.fillText(c.unidad, x + w + 14 * u, H - 88 * u);
+    }
+    g.font = FONT.mono(11 * u);
+    g.letterSpacing = `${0.9 * u}px`;
+    g.fillStyle = ink(0.78);
+    g.fillText(c.linea.toUpperCase(), x, H - 52 * u);
+  }
+  g.restore();
+}
+
+// ---------------------------------------------------------------- the ladder
+
+interface Peldano {
+  h: number;
+  label: string;
+}
+/** Minds on the ladder, by their connections (estimates; sources go to the sheet). */
+const PELDANOS: Peldano[] = [
+  { h: 3.85, label: 'un gusano' },
+  { h: 9, label: 'una abeja' },
+  { h: 11.3, label: 'un ratón' },
+  { h: 12, label: 'los modelos de hoy' },
+  { h: 14.5, label: 'tú' },
+  { h: 24.4, label: 'todos nosotros' },
+];
+const H0 = 0;
+const HTOP = 27;
+
+/** The ladder at the right edge, filled in gold up to `h`. */
+export function escalera(g: CanvasRenderingContext2D, u: number, W: number, H: number, h: number, alpha = 1) {
+  if (alpha <= 0.01) return;
+  const x = W - 170 * u;
+  const y0 = H - 70 * u;
+  const y1 = 86 * u;
+  const yOf = (v: number) => y0 + ((v - H0) / (HTOP - H0)) * (y1 - y0);
+  g.save();
+  g.globalAlpha = alpha;
+  g.lineWidth = Math.max(1, 1.1 * u);
+  const seg = (a: number, b: number, dash: number[], al: number) => {
+    g.setLineDash(dash.map((d) => d * u));
+    g.strokeStyle = ink(al);
+    g.beginPath();
+    g.moveTo(x, yOf(a));
+    g.lineTo(x, yOf(b));
+    g.stroke();
+  };
+  seg(H0, 14.5, [], 0.45);
+  seg(14.5, 24.4, [5, 4], 0.4);
+  seg(24.4, HTOP, [1.5, 4], 0.4);
+  g.setLineDash([]);
+  g.font = FONT.mono(9 * u);
+  g.letterSpacing = `${1 * u}px`;
+  g.textAlign = 'right';
+  g.textBaseline = 'middle';
+  for (let e = 0; e <= 24; e += 6) {
+    const yy = yOf(e);
+    g.strokeStyle = ink(0.32);
+    g.beginPath();
+    g.moveTo(x - 9 * u, yy);
+    g.lineTo(x, yy);
+    g.stroke();
+    const near = 1 - smoothstep(2, 6, Math.abs(e - h));
+    g.globalAlpha = alpha * (0.3 + 0.45 * near);
+    const w = torre(g, -9999, 0, e === 0 ? ['1'] : ['10', String(e)], 16 * u, ink(0.9));
+    torre(g, x - 16 * u - w, yy + 5 * u, e === 0 ? ['1'] : ['10', String(e)], 16 * u, ink(0.9));
+    g.globalAlpha = alpha;
+  }
+  // The fill.
+  const yp = yOf(clamp(h, H0, HTOP));
+  const grd = g.createLinearGradient(0, y0, 0, yp);
+  grd.addColorStop(0, oro(0.05));
+  grd.addColorStop(1, oro(0.9));
+  g.fillStyle = grd;
+  g.fillRect(x - 1.6 * u, yp, 3.2 * u, y0 - yp);
+  // Only the landmark nearest to where we are.
+  g.font = FONT.mono(9 * u);
+  g.letterSpacing = `${1 * u}px`;
+  g.textAlign = 'left';
+  const cerca = PELDANOS.reduce((m, r) => (Math.abs(r.h - h) < Math.abs(m.h - h) ? r : m), PELDANOS[0]);
+  const yy = yOf(cerca.h);
+  const a = 0.75 * (1 - smoothstep(1.2, 3, Math.abs(cerca.h - h)));
+  if (a >= 0.02) {
+    g.globalAlpha = alpha * a;
+    g.fillStyle = cerca.h <= h + 1e-3 ? ORO : ink(1);
+    g.fillRect(x + 4 * u, yy - 0.5 * u, 6 * u, Math.max(1, u));
+    g.fillText(cerca.label.toUpperCase(), x + 14 * u, yy);
+  }
+  g.globalAlpha = alpha;
+  g.fillStyle = ORO;
+  g.shadowColor = ORO;
+  g.shadowBlur = 10 * u;
+  g.beginPath();
+  g.arc(x, yp, 4 * u, 0, Math.PI * 2);
+  g.fill();
+  g.restore();
+}
+
+/** A named mark on the ladder's left side (act V). `e` makes it larger while it is introduced. */
+export function marcaEscalera(g: CanvasRenderingContext2D, u: number, W: number, H: number, h: number, label: string, alpha: number, e = 0, pasada = false) {
+  if (alpha <= 0.01) return;
+  const x = W - 170 * u;
+  const y0 = H - 70 * u;
+  const y1 = 86 * u;
+  const y = y0 + ((h - H0) / (HTOP - H0)) * (y1 - y0);
+  g.save();
+  g.globalAlpha *= alpha;
+  const color = pasada ? ORO : ink(0.95);
+  g.strokeStyle = color;
+  g.fillStyle = color;
+  g.lineWidth = Math.max(1, 1.1 * u);
+  const largo = (10 + 26 * e) * u;
+  g.beginPath();
+  g.moveTo(x - largo, y);
+  g.lineTo(x, y);
+  g.stroke();
+  g.font = FONT.mono((9 + 2.5 * e) * u);
+  g.letterSpacing = `${1 * u}px`;
+  g.textAlign = 'right';
+  g.textBaseline = 'middle';
+  g.shadowColor = 'rgba(0,0,0,0.9)';
+  g.shadowBlur = 8 * u;
+  g.fillText(label.toUpperCase(), x - largo - 6 * u, y);
+  g.restore();
+}
+
+/** The brand and the study, top left. */
+export function marca(g: CanvasRenderingContext2D, u: number, concepto: string, sub: string) {
+  g.save();
+  g.textBaseline = 'alphabetic';
+  g.shadowColor = 'rgba(0,0,0,0.8)';
+  g.shadowBlur = 10 * u;
+  g.font = FONT.serif(27 * u);
+  g.fillStyle = ink();
+  g.fillText('Mente', 40 * u, 54 * u);
+  const w = g.measureText('Mente').width;
+  g.font = FONT.mono(10.5 * u);
+  g.letterSpacing = `${1.4 * u}px`;
+  g.fillStyle = ORO;
+  g.fillText(concepto.toUpperCase(), 40 * u + w + 16 * u, 52 * u);
+  g.fillStyle = ink(0.5);
+  g.fillText(sub.toUpperCase(), 40 * u, 76 * u);
+  g.restore();
+}
+
+// ---------------------------------------------------------------- the walls
+
+/**
+ * A wall: one of the four things a machine was never going to do, written across the film at the
+ * moment it does it. `a` is how much of it shows (0..1).
+ */
+export function muro(g: CanvasRenderingContext2D, u: number, W: number, H: number, orden: string, nombre: string, frase: string, a: number) {
+  if (a <= 0.01) return;
+  const x = W / 2;
+  const y = H * 0.4;
+  g.save();
+  g.globalAlpha = a;
+  const velo = g.createRadialGradient(x, y, 0, x, y, 520 * u);
+  velo.addColorStop(0, 'rgba(0,0,0,0.62)');
+  velo.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = velo;
+  g.fillRect(0, 0, W, H);
+  g.textAlign = 'center';
+  g.textBaseline = 'alphabetic';
+  g.shadowColor = 'rgba(0,0,0,0.9)';
+  g.shadowBlur = 14 * u;
+  g.font = FONT.mono(11 * u);
+  g.letterSpacing = `${3.2 * u}px`;
+  g.fillStyle = ORO;
+  g.fillText(orden.toUpperCase(), x, y - 78 * u);
+  g.letterSpacing = '0px';
+  g.font = FONT.italic(104 * u);
+  g.fillStyle = ink();
+  g.fillText(nombre, x, y + 14 * u);
+  // The line under it opens from the middle as the wall comes.
+  const w = 250 * u * (0.25 + 0.75 * a);
+  const linea = g.createLinearGradient(x - w, 0, x + w, 0);
+  linea.addColorStop(0, oro(0));
+  linea.addColorStop(0.5, oro(0.95));
+  linea.addColorStop(1, oro(0));
+  g.fillStyle = linea;
+  g.fillRect(x - w, y + 44 * u, 2 * w, Math.max(1, 1.2 * u));
+  g.font = FONT.sans(15 * u);
+  g.fillStyle = ink(0.74);
+  wrap(g, frase, 520 * u).forEach((l, i) => g.fillText(l, x, y + 82 * u + i * 22 * u));
+  g.restore();
+}

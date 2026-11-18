@@ -1,0 +1,550 @@
+import * as THREE from 'three';
+import { Timeline } from './timeline';
+import { enfocar, materia, materiaBuilder } from '../src/engine/materia';
+import { FONT, ink, nota, proyectar, texto, type Cuenta, type Rotulo } from './placa';
+import { CORAL, ease, MAQUINA, mirar, TU, V } from './comun';
+import type { Escena, Frame, Instancia } from './tipos';
+import sitios from '../src/datos/lugares.json';
+
+/**
+ * Act IV · today (moments 17–20). The Earth: all the work people do, and the share a machine already
+ * does. The Earth closes into the first nervous system and from it grows the tree of every mind there
+ * has been. This is the act's long shot: the camera rides the tip of our own line for 600 million
+ * years while the others leave to the sides, and never cuts. Then the whole tree, the bud at the tip
+ * of our branch, and the tip from near: the dates of what a machine learnt to do, and your life over
+ * them.
+ *
+ * What is real: the coasts of the globe (the land of src/datos/lugares.json) and the order and rough
+ * dates of the tree's forks (how long ago each line left ours), and the five dates on the bud. What is a drawing: which lights of the globe change (a share, not a
+ * map of anything) and the shape of the branches.
+ */
+
+const CAP = 'IV · Hoy';
+const AZUL = 'rgba(205,226,255,1)';
+const VERDE = '#73ffd9';
+
+/** What only you could do, in the order a machine learnt it: [name, x, y]. */
+const TAREAS: [string, number, number][] = [
+  ['calcular', -5.2, 2.6],
+  ['jugar ajedrez', -2.9, 1.5],
+  ['leer letra manuscrita', -0.6, 2.9],
+  ['reconocer caras', 1.4, 1.7],
+  ['jugar go', 3.4, 2.8],
+  ['traducir', -1.6, -0.1],
+  ['plegar proteínas', 0.6, -0.6],
+  ['dibujar', 3.2, 0.4],
+  ['escribir', -0.9, -2.2],
+  ['programar', 1.3, -2.6],
+  ['conversar', 3.3, -1.7],
+];
+
+/** Where the camera looks while the whole drawing is in frame, and the globe. */
+const CENTRO = V(0, 0.2, 0);
+const GLOBO = V(0.6, 0.4, 0);
+const RADIO = 2.9;
+
+/** The tree: time runs left to right, from the first neurons (t = 0) to today (t = 1). */
+const X0 = -6.2;
+const X1 = 4.3;
+const Y_RAIZ = 0.9;
+const enX = (t: number) => X0 + (X1 - X0) * t;
+type Curva = (t: number) => number;
+/** A branch that leaves its mother at t0 and is at height y1 today. */
+const hija = (madre: Curva, t0: number, y1: number, t1 = 0.97): Curva => {
+  const off = y1 - madre(1);
+  return (t) => madre(t) + off * ease(t0, t1, t);
+};
+const base: Curva = () => Y_RAIZ;
+const medusas = hija(base, 0.02, 3.1, 0.34);
+const proto = hija(base, 0.07, 2.05, 0.3);
+const pulpos = hija(proto, 0.14, 2.55, 0.5);
+const abejas = hija(proto, 0.14, 1.55, 0.5);
+const linaje = hija(base, 0.07, -2.1);
+const peces = hija(linaje, 0.28, 0.6);
+const aves = hija(linaje, 0.47, -0.4);
+const ballenas = hija(linaje, 0.84, -1.3);
+/** The same branches in depth: ours stays at z = 0 and the others leave it, away from the camera or towards it. */
+const plano: Curva = () => 0;
+const zMedusas = hija(plano, 0.02, -2.4, 0.34);
+const zProto = hija(plano, 0.07, -1.5, 0.3);
+const zPulpos = hija(zProto, 0.14, -2.0, 0.5);
+const zAbejas = hija(zProto, 0.14, -1.0, 0.5);
+const zPeces = hija(plano, 0.28, 0.9, 0.6);
+const zAves = hija(plano, 0.47, -1.1, 0.8);
+const zBallenas = hija(plano, 0.84, 0.5);
+/** What is drawn of each: [height, from, to, name at its tip, depth]. */
+const RAMAS: [Curva, number, number, string, Curva][] = [
+  [base, 0, 0.07, '', plano],
+  [medusas, 0.02, 1, 'medusas', zMedusas],
+  [proto, 0.07, 0.14, '', zProto],
+  [pulpos, 0.14, 1, 'pulpos', zPulpos],
+  [abejas, 0.14, 1, 'abejas', zAbejas],
+  [linaje, 0.07, 1, 'tú', plano],
+  [peces, 0.28, 1, 'peces', zPeces],
+  [aves, 0.47, 1, 'aves', zAves],
+  [ballenas, 0.84, 1, 'ballenas', zBallenas],
+];
+/** Who leaves our line, and when (t): [t, height, depth, what the film says]. The dates are real, rounded. */
+const SALIDAS: [number, Curva, Curva, string][] = [
+  [0.02, medusas, zMedusas, 'se van las medusas'],
+  [0.07, proto, zProto, 'se van los pulpos y las abejas'],
+  [0.28, peces, zPeces, 'se van los peces'],
+  [0.47, aves, zAves, 'se van las aves'],
+  [0.84, ballenas, zBallenas, 'se van las ballenas'],
+];
+/** What a machine learnt to do, on the bud: [where on it (0..1), text, dx, dy]. */
+const FECHAS: [number, string, number, number][] = [
+  [0.34, '1997 · el ajedrez', -70, -26],
+  [0.56, '2016 · el go', -74, -30],
+  [0.72, '2020 · la forma de las proteínas', -86, -34],
+  [0.86, '2023 · exámenes de médicos y abogados', -96, -40],
+  [0.97, '2025 · oro en la olimpiada de matemáticas', -60, -62],
+];
+const PUNTA = V(X1, linaje(1), 0);
+
+/** The tip from near: a drawing a hundred times smaller, in its own units. */
+const S = 0.01;
+const NACES = -1.8;
+const BROTA = -0.6;
+const HOY = 1.0;
+const brote = (s: number, out: THREE.Vector3) => out.set(BROTA + (HOY - BROTA) * s, 1.5 * Math.pow(s, 1.6), 0);
+
+export const acto4: Escena = {
+  id: 'acto4',
+  nombre: 'Hoy',
+  estilos: [{ key: '1', nombre: 'El acto', nota: 'El trabajo del mundo, el viaje por el árbol de todas las mentes, las fechas del brote y el tramo que te tocó.' }],
+  montar(stage): Instancia {
+    const root = stage.root;
+    const { camera } = stage;
+    stage.bloom.strength = 0.5;
+    stage.bloom.radius = 0.55;
+    stage.bloom.threshold = 0.42;
+
+    const a = V();
+    const b = V();
+
+    // ---- 17 · what only you could do: a few lights with a name among many without.
+    const tb = materiaBuilder(71);
+    const sitio: number[] = [];
+    TAREAS.forEach(([, x, y], i) => {
+      tb.push(x, y, 0, TU, 0.12, 1.5, { from: [0, 0, 0], kind: i + 1, delay: tb.r() * 0.5 });
+      sitio.push(x, y, 0);
+    });
+    for (let i = 0; i < 280; i++) {
+      const ang = tb.r() * Math.PI * 2;
+      const rad = Math.sqrt(tb.r());
+      const x = Math.cos(ang) * rad * 6.6 - 0.6;
+      const y = Math.sin(ang) * rad * 3.6 + 0.2;
+      const z = (tb.r() - 0.5) * 3;
+      // Most of them change too, at any moment; some never do.
+      tb.push(x, y, z, TU, 0.045, 0.55, { from: [0, 0, 0], kind: tb.r() < 0.6 ? 0.6 + tb.r() * 11 : 99, delay: tb.r() });
+      sitio.push(x, y, z);
+    }
+    const tareas = materia(tb.data(), {
+      pre: /* glsl */ `uniform float uPasa;`,
+      move: /* glsl */ `
+        fuente = 1.0;
+        float w = smoothstep(aKind - 0.25, aKind + 0.1, uPasa);
+        float dx = (uPasa - aKind) * 2.6;
+        em = mix(em * vec3(0.55, 1.0, 0.9), vec3(0.72, 0.84, 1.0) * em.g * 1.3, w) * (1.0 + 1.6 * exp(-dx * dx));
+        em *= 0.82 + 0.18 * sin(uTime * (0.7 + seed) + seed * 40.0);`,
+      uniforms: { uPasa: { value: 0 } },
+    });
+    root.add(tareas.points);
+
+    // ---- 18 · the Earth: every grain of land a light of work. They come from the lights of before.
+    const GL = new THREE.Group();
+    root.add(GL);
+    const gb = materiaBuilder(73);
+    const n17 = sitio.length / 3;
+    for (let i = 0; i < sitios.tierra.length; i += 2) {
+      const lat = (sitios.tierra[i] / 100) * (Math.PI / 180);
+      const lon = (sitios.tierra[i + 1] / 100) * (Math.PI / 180);
+      const j = Math.floor(gb.r() * n17) * 3;
+      gb.push(Math.cos(lat) * Math.sin(lon) * RADIO, Math.sin(lat) * RADIO, Math.cos(lat) * Math.cos(lon) * RADIO, TU, 0.03, 0.62, {
+        from: [sitio[j] - GLOBO.x, sitio[j + 1] - GLOBO.y, sitio[j + 2]],
+        delay: gb.r(),
+      });
+    }
+    const globo = materia(gb.data(), {
+      pre: /* glsl */ `uniform float uCam;`,
+      move: /* glsl */ `
+        // The far side shows through, faint.
+        vec3 nv = normalize(normalMatrix * position);
+        em *= mix(1.0, 0.1 + 0.9 * smoothstep(-0.25, 0.3, nv.z), k);
+        float w = smoothstep(seed - 0.015, seed, uCam);
+        em = mix(em * vec3(0.55, 1.0, 0.9) * 0.8, vec3(0.72, 0.84, 1.0) * em.g * 1.5, w);
+        em *= 0.8 + 0.2 * sin(uTime * (0.6 + seed * 1.3) + seed * 50.0);`,
+      uniforms: { uCam: { value: 0 } },
+    });
+    GL.add(globo.points);
+
+    // ---- 19 · the tree of minds. Every branch that is still alive reaches today.
+    const ab = materiaBuilder(75);
+    const at: number[] = [];
+    const trazo = (c: Curva, zc: Curva, t0: number, t1: number, size: number, luz: number, paso = 0.005) => {
+      const n = Math.ceil(((t1 - t0) * (X1 - X0)) / paso);
+      for (let s = 0; s <= n; s++) {
+        const t = t0 + ((t1 - t0) * s) / n;
+        ab.push(enX(t), c(t), zc(t), CORAL, size, luz);
+        at.push(t);
+      }
+    };
+    for (const [c, t0, t1, nombre, zc] of RAMAS) {
+      trazo(c, zc, t0, t1, 0.036, 0.85);
+      if (!nombre) continue;
+      const tu = nombre === 'tú';
+      ab.push(X1, c(1), zc(1), tu ? TU : CORAL, tu ? 0.14 : 0.09, 1.5, { kind: tu ? 3 : 1 });
+      at.push(1);
+    }
+    // Twigs: the many kinds no one names here; most of them ended long ago.
+    const vivas = RAMAS.filter(([, , t1]) => t1 === 1);
+    for (let i = 0; i < 420; i++) {
+      const [c, desde, , , zc] = vivas[Math.floor(ab.r() * vivas.length)];
+      const t0 = desde + (0.95 - desde) * ab.r();
+      const off = (ab.r() < 0.5 ? -1 : 1) * (0.1 + 0.5 * ab.r() * ab.r());
+      const offZ = (ab.r() - 0.5) * 1.4;
+      const t1 = Math.min(1, t0 + 0.03 + 0.4 * ab.r() * ab.r());
+      trazo((t) => c(t) + off * ease(t0, t0 + 0.16, t), (t) => zc(t) + offZ * ease(t0, t0 + 0.16, t), t0, t1, 0.022, 0.36, 0.008);
+    }
+    ab.push(X0, Y_RAIZ, 0, CORAL, 0.13, 1.5, { kind: 2 });
+    at.push(0);
+    // The bud, from afar: a spark of another colour at the tip of our branch.
+    ab.push(X1 + 0.05, PUNTA.y + 0.06, 0, MAQUINA, 0.1, 1.7, { kind: 4 });
+    at.push(1);
+    const arbol = materia(ab.data(), {
+      pre: /* glsl */ `attribute float aT; uniform float uCre, uBro;`,
+      move: /* glsl */ `
+        fuente = 1.0;
+        float v = 1.0 - smoothstep(uCre * 1.04 - 0.04, uCre * 1.04, aT);
+        if (aKind < 0.5) {
+          float x = (fract(aT * 4.0 - uTime * 0.05) - 0.5) / 0.08;
+          v *= 0.7 + 0.5 * exp(-x * x);
+          // Every line that is still growing has a bright end.
+          float fr = (uCre * 1.04 - 0.02 - aT) / 0.012;
+          v *= 1.0 + 3.0 * exp(-fr * fr) * (1.0 - smoothstep(0.97, 1.0, uCre));
+        } else if (aKind > 3.5) v = uBro * (0.8 + 0.2 * sin(uTime * 3.0));
+        else if (aKind > 1.5 && aKind < 2.5) v = 1.0;
+        else v = smoothstep(0.96, 1.0, uCre);
+        em *= v;`,
+      uniforms: { uCre: { value: 0 }, uBro: { value: 0 } },
+      extra: { aT: [new Float32Array(at), 1] },
+    });
+    root.add(arbol.points);
+    // The sea all this happens in: dust that the ride passes through.
+    const db = materiaBuilder(81);
+    for (let i = 0; i < 11000; i++) db.push(X0 - 3 + (X1 - X0 + 6) * db.r(), (db.r() - 0.5) * 9 + 0.4, 3 - 9 * db.r(), new THREE.Color(0.5, 0.75, 0.85), 0.012, 0.5);
+    const mar = materia(db.data(), {
+      move: /* glsl */ `p.y += 0.06 * sin(uTime * 0.2 + seed * 40.0); em *= 0.6 + 0.4 * sin(uTime * (0.4 + seed) + seed * 60.0);`,
+    });
+    root.add(mar.points);
+    // The growing end of our own line: the light the camera rides behind.
+    const gb2 = materiaBuilder(79);
+    gb2.push(0, 0, 0, new THREE.Color(1, 0.86, 0.74), 0.0001, 1);
+    const guia = materia(gb2.data());
+    guia.u.uFuente.value = 1;
+    root.add(guia.points);
+
+    // ---- 20 · the tip from near: the branch that got here, the bud, and your life over both.
+    const HG = new THREE.Group();
+    HG.position.copy(PUNTA);
+    HG.scale.setScalar(S);
+    root.add(HG);
+    const hb = materiaBuilder(77);
+    const ht: number[] = [];
+    for (let x = -9; x <= HOY; x += 0.03) {
+      hb.push(x, 0, 0, CORAL, 0.055, 0.8);
+      ht.push(0);
+    }
+    for (let x = NACES; x <= HOY; x += 0.02) {
+      hb.push(x, 0, 0, TU, 0.09, 1.3, { kind: 1 });
+      ht.push((x - NACES) / (HOY - NACES));
+    }
+    for (let s = 0; s <= 1; s += 0.012) {
+      brote(s, a);
+      hb.push(a.x, a.y, 0, MAQUINA, 0.065, 1.2, { kind: 2 });
+      ht.push(s);
+    }
+    // What comes: dotted, because no one has seen it.
+    brote(1, a);
+    brote(0.97, b);
+    b.subVectors(a, b).normalize();
+    for (let s = 1; s <= 11; s++) {
+      hb.push(HOY + s * 0.24, 0, 0, TU, 0.06, 1.0, { kind: 3 });
+      ht.push(s * 0.24);
+      hb.push(a.x + b.x * s * 0.24, a.y + b.y * s * 0.24, 0, MAQUINA, 0.06, 1.0, { kind: 3 });
+      ht.push(s * 0.24);
+    }
+    hb.push(HOY, 0, 0, TU, 0.2, 1.7, { kind: 4 });
+    ht.push(1);
+    hb.push(a.x, a.y, 0, MAQUINA, 0.16, 1.6, { kind: 2 });
+    ht.push(1);
+    const hoy = materia(hb.data(), {
+      pre: /* glsl */ `attribute float aT; uniform float uVida, uBrote;`,
+      move: /* glsl */ `
+        fuente = 1.0;
+        if (aKind > 0.5 && aKind < 1.5) em *= 1.0 - smoothstep(uVida * 1.06 - 0.06, uVida * 1.06, aT);
+        else if (aKind > 1.5 && aKind < 2.5) em *= 1.0 - smoothstep(uBrote * 1.06 - 0.06, uBrote * 1.06, aT * 0.999);
+        else if (aKind > 2.5 && aKind < 3.5) em *= smoothstep(0.75, 1.0, uVida) * (0.55 + 0.45 * sin(uTime * 1.5 - aT * 5.0));
+        else if (aKind > 3.5) em *= smoothstep(0.8, 1.0, uVida);`,
+      uniforms: { uVida: { value: 0 }, uBrote: { value: 0 } },
+      extra: { aT: [new Float32Array(ht), 1] },
+    });
+    HG.add(hoy.points);
+    const local = (x: number, y: number, out: THREE.Vector3) => out.set(PUNTA.x + x * S, PUNTA.y + y * S, 0);
+    const BROTE = local(a.x, a.y, V());
+    const CERCA = local(0.4, 0.2, V());
+
+    const ub = materiaBuilder(3);
+    ub.push(0, 0, 0, MAQUINA, 0.0001, 1);
+    const fin = materia(ub.data());
+    fin.u.uFuente.value = 1;
+    fin.points.position.copy(BROTE);
+    root.add(fin.points);
+
+    const D_LEJOS = 1.02;
+    const D_CERCA = -1.0;
+    const tl = new Timeline();
+    // d: log10 of the camera's distance; tk: the lights come out of the point; gk, gg: the globe forms,
+    // its light; cam: the share of its lights that changed; gs: it closes into the root; cre: the tree
+    // grows; sig: how much the camera rides the tip of our line; bro: the bud; hoy, bud, vida: the tip
+    // from near (it shows, the bud draws itself with its dates, your life).
+    tl.set({ d: 1.0, az: -0.07, tk: 0, tg: 1, gk: 0, gg: 0, rot: 1.5, cam: 0, gs: 0, cre: 0, sig: 0, ag: 0, bro: 0, hoy: 0, bud: 0, vida: 0, fin: 0 });
+    tl.label('nosotros').caption(6.6, 'Lo que hacíamos nosotros', 'Todo el trabajo del mundo salía de manos y cabezas humanas. Hoy una parte la hace una máquina. Entre 2019 y 2025, el largo de la tarea que una máquina termina sola se duplicó cada siete meses.');
+    tl.to(1.2, { tk: 1, d: D_LEJOS });
+    tl.with(1.6, { tg: 0 });
+    tl.to(2.0, { gk: 1, gg: 1, rot: 1.25 });
+    tl.to(3.4, { cam: 0.34, rot: 0.55, az: 0.01 });
+    tl.label('arbol').caption(5.0, 'Seiscientos millones de años', 'Para ver qué tan raro es esto hay que ir al principio. Pensar se inventó una sola vez: las primeras neuronas, en el mar. Todo lo que piensa viene de ellas.');
+    tl.with(1.0, { ag: 1 });
+    tl.to(1.6, { gs: 1, rot: 0.3, sig: 1 });
+    tl.with(0.5, { gg: 0 });
+    tl.to(3.4, { cre: 0.075 });
+    tl.label('otros').caption(6.4, 'Otros caminos', 'Sigue esta línea: es la tuya. A los lados se van otras. Aquí se separan los pulpos: la mente más lejana a la tuya que hay en la Tierra, armada por otro camino.');
+    tl.to(6.4, { cre: 0.3 });
+    tl.label('aves').caption(7.0, 'Cada una por su lado', 'Los peces se quedan en el agua. Las aves se van hace 320 millones de años y, por su cuenta, aprenden a usar herramientas y a contar.');
+    tl.to(7.0, { cre: 0.84 });
+    tl.label('rama').caption(5.0, 'Tu rama', 'Hace 90 millones de años se van las que serán ballenas. Lo que queda es tu rama. Y en todo este tiempo, ni una sola mente que no estuviera hecha de células.');
+    tl.to(5.0, { cre: 1 });
+    tl.label('todas').caption(5.2, 'Todas las mentes', 'Este es el árbol entero: todas las mentes que ha habido, y cada una nació de otra. En la punta de tu rama brota una distinta.');
+    tl.to(3.2, { sig: 0, az: 0.04 });
+    tl.to(2.0, { bro: 1, az: 0.055, d: 1.0 });
+    tl.label('juego').caption(7.6, 'Un juego tras otro', 'Esto es la punta, de cerca. Cada cosa que solo hacías tú fue cayendo: el ajedrez, el go, que iba a tardar un siglo, un problema que la biología llevaba cincuenta años sin resolver.');
+    tl.to(2.4, { d: D_CERCA, hoy: 1 });
+    tl.to(5.2, { bud: 1, az: 0.075 });
+    tl.label('hoy').caption(5.8, 'Hoy', 'Busca el año en que naciste. Todo esto cabe en una vida: la tuya. Naciste justo antes, y vas a ver lo que viene.');
+    tl.to(2.6, { vida: 1, az: 0.09 });
+    tl.to(1.4, { az: 0.1, d: -0.97 });
+    tl.to(1.4, { fin: 1, d: -0.92 });
+    tl.wait(0.4);
+
+    const mira = V();
+    const pos = V();
+    const s1 = { x: 0, y: 0, z: 0 };
+    const s2 = { x: 0, y: 0, z: 0 };
+    const RAIZ = V(X0, Y_RAIZ, 0);
+    const T = V();
+    const posF = V();
+    const miraF = V();
+
+    /** A word written on the film. */
+    const palabra = (g: CanvasRenderingContext2D, u: number, x: number, y: number, s: string, px: number, alpha: number, color = ink()) => {
+      if (alpha <= 0.01) return;
+      g.save();
+      g.globalAlpha = Math.min(1, alpha);
+      g.font = FONT.serif(px * u);
+      g.textAlign = 'left';
+      g.textBaseline = 'middle';
+      g.shadowColor = 'rgba(0,0,0,0.9)';
+      g.shadowBlur = 9 * u;
+      g.fillStyle = color;
+      g.fillText(s, x, y);
+      g.restore();
+    };
+
+    return {
+      tl,
+      luzEntrada: new THREE.Color(1.0, 0.82, 0.5),
+      luzSalida: MAQUINA.clone(),
+      cuenta(): Cuenta | null {
+        return { pisos: ['10', '12'], linea: 'conexiones · los modelos de hoy', h: 12 };
+      },
+      rotulo(p): Rotulo | null {
+        const cp = tl.captionAt(p);
+        return cp ? { capitulo: CAP, name: cp.name, fact: cp.fact } : null;
+      },
+      placa(g, f) {
+        const { p, W, H, u } = f;
+        const dl = tl.get('d', p);
+        const lejos = ease(0.2, 0.9, dl);
+
+        // 18 · what the two colours are.
+        const gg = tl.get('gg', p) * ease(0.5, 1, tl.get('gk', p)) * (1 - ease(0, 0.4, tl.get('gs', p)));
+        if (gg > 0.02) {
+          proyectar(a.set(GLOBO.x + RADIO + 0.5, GLOBO.y - 1.6, 0), camera, W, H, s1);
+          for (const [j, [color, s]] of ([[VERDE, 'lo hace una persona'], [AZUL, 'lo hace una máquina']] as const).entries()) {
+            const y = s1.y + j * 24 * u;
+            g.save();
+            g.globalAlpha = gg;
+            g.fillStyle = color;
+            g.beginPath();
+            g.arc(s1.x, y, 3.2 * u, 0, Math.PI * 2);
+            g.fill();
+            g.restore();
+            texto(g, u, s1.x + 12 * u, y, s, ink(0.9), gg, 10.5);
+          }
+        }
+
+        // 19 · the tree's time, and who is at the end of each branch.
+        const cre = tl.get('cre', p);
+        const sig = ease(0, 1, tl.get('sig', p));
+        // The ride: how long ago this is, and who leaves at each fork.
+        const viaje = tl.get('ag', p) * sig * ease(0.004, 0.03, cre);
+        if (viaje > 0.02) {
+          proyectar(T, camera, W, H, s1);
+          const hace = Math.round((1 - cre) * 600);
+          nota(g, u, s1.x, s1.y, hace > 0 ? `hace ${hace} millones de años` : 'hoy', 38, 64, viaje * 0.9);
+          for (const [t0, c, zc, frase] of SALIDAS) {
+            const k = ease(t0 + 0.01, t0 + 0.035, cre) * (1 - ease(t0 + 0.13, t0 + 0.2, cre));
+            if (k < 0.02) continue;
+            const t = Math.min(cre, t0 + 0.075);
+            proyectar(a.set(enX(t), c(t), zc(t)), camera, W, H, s1);
+            nota(g, u, s1.x, s1.y, frase, -30, -44, viaje * k);
+          }
+        }
+        const ag = tl.get('ag', p) * lejos * (1 - sig);
+        if (ag > 0.02) {
+          proyectar(a.set(X0, 3.62, 0), camera, W, H, s1);
+          proyectar(a.set(X1, 3.62, 0), camera, W, H, s2);
+          const largo = ease(0, 1, cre);
+          g.save();
+          g.globalAlpha = 0.55 * ag * ease(0.0, 0.1, cre);
+          g.strokeStyle = ink(0.8);
+          g.lineWidth = Math.max(1, u);
+          g.beginPath();
+          g.moveTo(s1.x, s1.y);
+          g.lineTo(s1.x + (s2.x - s1.x) * largo, s1.y);
+          g.moveTo(s1.x, s1.y - 5 * u);
+          g.lineTo(s1.x, s1.y + 5 * u);
+          if (largo > 0.99) {
+            g.moveTo(s2.x, s2.y - 5 * u);
+            g.lineTo(s2.x, s2.y + 5 * u);
+          }
+          g.stroke();
+          g.restore();
+          texto(g, u, s1.x + 10 * u, s1.y - 13 * u, 'hace 600 millones de años', ink(0.85), ag * ease(0.0, 0.1, cre), 10.5);
+          texto(g, u, s2.x - 10 * u, s2.y - 13 * u, 'hoy', ink(0.85), ag * ease(0.96, 1, cre), 10.5, 'right');
+          proyectar(RAIZ, camera, W, H, s1);
+          nota(g, u, s1.x, s1.y, 'las primeras neuronas', 26, 58, ag * ease(0.02, 0.15, cre));
+          const tips = ag * ease(0.96, 1, cre);
+          for (const [c, , , s, zc] of RAMAS) {
+            if (!s) continue;
+            proyectar(a.set(X1, c(1), zc(1)), camera, W, H, s1);
+            palabra(g, u, s1.x + 13 * u, s1.y, s, 20, 0.9 * tips, s === 'tú' ? VERDE : ink());
+          }
+        }
+
+        // 20 · the three dates of the tip.
+        const hy = tl.get('hoy', p) * ease(-0.5, -0.9, dl) * (1 - ease(0.1, 0.6, tl.get('fin', p)));
+        if (hy > 0.02) {
+          const vida = tl.get('vida', p);
+          proyectar(local(NACES, 0, a), camera, W, H, s1);
+          nota(g, u, s1.x, s1.y, 'naciste', -34, 62, hy * ease(0.0, 0.2, vida), VERDE);
+          proyectar(local(BROTA, 0, a), camera, W, H, s1);
+          nota(g, u, s1.x, s1.y, 'el brote', 30, 62, hy);
+          proyectar(local(HOY, 0, a), camera, W, H, s1);
+          nota(g, u, s1.x, s1.y, 'hoy', 56, 40, hy * ease(0.8, 1, vida), VERDE);
+          const bud = tl.get('bud', p);
+          for (const [sb, frase, dx, dy] of FECHAS) {
+            brote(sb, b);
+            proyectar(local(b.x, b.y, a), camera, W, H, s1);
+            nota(g, u, s1.x, s1.y, frase, dx, dy, hy * ease(sb - 0.06, sb + 0.02, bud), AZUL);
+          }
+          proyectar(local(0.55, 0, a), camera, W, H, s1);
+          nota(g, u, s1.x, s1.y, 'no está hecha de células', 40, 76, hy * (1 - ease(0.1, 0.3, bud)), AZUL);
+        }
+      },
+      update(f: Frame) {
+        const p = f.p;
+        camera.near = 0.005;
+        camera.far = 400;
+        camera.fov = 46;
+        const dl = tl.get('d', p);
+        const d = Math.pow(10, dl);
+        const fi = tl.get('fin', p);
+        // The tip keeps its place on the film all the way in: the look-at point nears it as the camera does.
+        const z = Math.min(1, Math.max(0, (d - Math.pow(10, D_CERCA)) / (Math.pow(10, D_LEJOS) - Math.pow(10, D_CERCA))));
+        mira.copy(CERCA).lerp(CENTRO, z).lerp(BROTE, ease(0, 1, fi));
+        const az = tl.get('az', p) + 0.012 * Math.sin(f.time * 0.07);
+        pos.set(Math.sin(az), 0.02, Math.cos(az)).multiplyScalar(d).add(mira);
+        // The ride: behind and to one side of the growing end of our line, looking ahead along it.
+        const cre = tl.get('cre', p);
+        const sig = ease(0, 1, tl.get('sig', p));
+        T.set(enX(cre), cre < 0.07 ? base(cre) : linaje(cre), 0);
+        posF.set(T.x - 1.25 + 0.15 * Math.sin(f.time * 0.06), T.y + 0.42, 1.3);
+        miraF.set(T.x + 0.7, T.y + 0.08, -0.4);
+        pos.lerp(posF, sig);
+        mira.lerp(miraF, sig);
+        mirar(camera, pos, mira);
+
+        const tg = tl.get('tg', p);
+        tareas.points.visible = tg > 0.001;
+        enfocar(tareas, f.focal, f.dpr, f.time);
+        tareas.u.uK.value = tl.get('tk', p);
+        tareas.u.uSpread.value = 0.5;
+        tareas.u.uPasa.value = 0;
+        tareas.u.uMinPx.value = 2 * f.dpr;
+        tareas.u.uGain.value = tg;
+
+        const gg = tl.get('gg', p);
+        const gs = ease(0, 1, tl.get('gs', p));
+        const escala = 1 - 0.985 * gs;
+        globo.points.visible = gg > 0.001;
+        GL.position.copy(GLOBO).lerp(RAIZ, gs);
+        GL.scale.setScalar(escala);
+        GL.rotation.y = tl.get('rot', p);
+        enfocar(globo, f.focal, f.dpr, f.time);
+        globo.u.uEscalaMundo.value = escala;
+        globo.u.uK.value = tl.get('gk', p);
+        globo.u.uCam.value = tl.get('cam', p);
+        globo.u.uGain.value = gg;
+
+        const ag = tl.get('ag', p) * ease(-0.25, 0.5, dl);
+        arbol.points.visible = ag > 0.001;
+        enfocar(arbol, f.focal, f.dpr, f.time);
+        arbol.u.uCre.value = cre;
+        arbol.u.uBro.value = tl.get('bro', p);
+        arbol.u.uMaxPx.value = (12 - 4 * sig) * f.dpr;
+        arbol.u.uGain.value = ag * (1 - 0.45 * (1 - sig));
+        const lleva = tl.get('ag', p) * sig * ease(0.0, 0.01, cre);
+        guia.points.visible = lleva > 0.001;
+        guia.points.position.copy(T);
+        enfocar(guia, f.focal, f.dpr, f.time);
+        guia.u.uMinPx.value = 5.5 * f.dpr;
+        guia.u.uGain.value = 2.2 * lleva;
+        mar.points.visible = lleva > 0.001;
+        enfocar(mar, f.focal, f.dpr, f.time);
+        mar.u.uMinPx.value = 1.8 * f.dpr;
+        mar.u.uMaxPx.value = 6 * f.dpr;
+        mar.u.uFuente.value = 0.6;
+        mar.u.uFog.value = 5;
+        mar.u.uGain.value = 0.9 * lleva;
+
+        const hy = tl.get('hoy', p) * ease(0.35, -0.45, dl);
+        hoy.points.visible = hy > 0.001;
+        enfocar(hoy, f.focal, f.dpr, f.time);
+        hoy.u.uEscalaMundo.value = S;
+        hoy.u.uVida.value = tl.get('vida', p);
+        hoy.u.uBrote.value = tl.get('bud', p);
+        hoy.u.uMaxPx.value = 16 * f.dpr;
+        hoy.u.uGain.value = hy * (1 - ease(0.3, 0.95, fi));
+
+        fin.points.visible = fi > 0.001;
+        enfocar(fin, f.focal, f.dpr, f.time);
+        fin.u.uMinPx.value = 4.5 * f.dpr;
+        fin.u.uGain.value = 2.6 * ease(0.4, 1, fi);
+      },
+      dispose() {},
+    };
+  },
+};
