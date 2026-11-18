@@ -145,6 +145,10 @@ export interface Cuenta {
   a?: number;
 }
 
+/** A narrow screen (a phone upright): the scale hugs the right edge without its labels, and the
+ * sentence keeps clear of it. */
+export const angosto = (W: number, u: number) => W / u < 900;
+
 /** The count at bottom left, with the moment's chapter, name and sentence above it. */
 export function cuenta(g: CanvasRenderingContext2D, u: number, H: number, c: Cuenta | null, cap: Rotulo | null, capAlpha = 1) {
   const x = 44 * u;
@@ -166,7 +170,7 @@ export function cuenta(g: CanvasRenderingContext2D, u: number, H: number, c: Cue
     g.fillText(cap.name, x, H - 236 * u);
     g.font = FONT.sans(14 * u);
     g.fillStyle = ink(0.62);
-    const lineas = wrap(g, cap.fact, 470 * u);
+    const lineas = wrap(g, cap.fact, angosto(g.canvas.width, u) ? g.canvas.width - x - 44 * u : 470 * u);
     if (cap.escrito === undefined) lineas.forEach((line, i) => g.fillText(line, x, H - 208 * u + i * 20 * u));
     else {
       // Word by word; the newest word is still gold, like the thread that writes.
@@ -224,7 +228,8 @@ const HTOP = 27;
 /** The ladder at the right edge, filled in gold up to `h`. */
 export function escalera(g: CanvasRenderingContext2D, u: number, W: number, H: number, h: number, alpha = 1) {
   if (alpha <= 0.01) return;
-  const x = W - 170 * u;
+  const chico = angosto(W, u);
+  const x = chico ? W - 20 * u : W - 170 * u;
   const y0 = H - 70 * u;
   const y1 = 86 * u;
   const yOf = (v: number) => y0 + ((v - H0) / (HTOP - H0)) * (y1 - y0);
@@ -254,6 +259,7 @@ export function escalera(g: CanvasRenderingContext2D, u: number, W: number, H: n
     g.moveTo(x - 9 * u, yy);
     g.lineTo(x, yy);
     g.stroke();
+    if (chico) continue;
     const near = 1 - smoothstep(2, 6, Math.abs(e - h));
     g.globalAlpha = alpha * (0.3 + 0.45 * near);
     const w = torre(g, -9999, 0, e === 0 ? ['1'] : ['10', String(e)], 16 * u, ink(0.9));
@@ -274,7 +280,7 @@ export function escalera(g: CanvasRenderingContext2D, u: number, W: number, H: n
   const cerca = PELDANOS.reduce((m, r) => (Math.abs(r.h - h) < Math.abs(m.h - h) ? r : m), PELDANOS[0]);
   const yy = yOf(cerca.h);
   const a = 0.75 * (1 - smoothstep(1.2, 3, Math.abs(cerca.h - h)));
-  if (a >= 0.02) {
+  if (a >= 0.02 && !chico) {
     g.globalAlpha = alpha * a;
     g.fillStyle = cerca.h <= h + 1e-3 ? ORO : ink(1);
     g.fillRect(x + 4 * u, yy - 0.5 * u, 6 * u, Math.max(1, u));
@@ -293,7 +299,7 @@ export function escalera(g: CanvasRenderingContext2D, u: number, W: number, H: n
 /** A named mark on the ladder's left side (act V). `e` makes it larger while it is introduced. */
 export function marcaEscalera(g: CanvasRenderingContext2D, u: number, W: number, H: number, h: number, label: string, alpha: number, e = 0, pasada = false) {
   if (alpha <= 0.01) return;
-  const x = W - 170 * u;
+  const x = angosto(W, u) ? W - 20 * u : W - 170 * u;
   const y0 = H - 70 * u;
   const y1 = 86 * u;
   const y = y0 + ((h - H0) / (HTOP - H0)) * (y1 - y0);

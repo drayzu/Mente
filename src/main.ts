@@ -10,6 +10,7 @@ import { createStage, type Stage } from '../estudios/stage';
 import { cuenta, escalera, FONT, ink } from '../estudios/placa';
 import type { Escena, Frame, Instancia } from '../estudios/tipos';
 import { crearSonido } from './engine/sonido';
+import { crearMarco } from './marco/marco';
 import { punto } from '../estudios/punto';
 import { acto1 } from '../estudios/acto1';
 import { acto2 } from '../estudios/acto2';
@@ -159,39 +160,26 @@ const frozen: number | null = params.has('ver') ? Number(params.get('ver')) : nu
 if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 scrollTo(0, P * PX_PER_BEAT);
 addEventListener('scroll', () => (target = clamp(scrollY / PX_PER_BEAT, 0, TOTAL)));
-addEventListener('wheel', () => ((autoplay = false), marcar()), { passive: true });
-addEventListener('touchstart', () => ((autoplay = false), marcar()), { passive: true });
-// The series' keys and their buttons: S the sound, A autoplay.
+addEventListener('wheel', () => (autoplay = false), { passive: true });
+// A tap on the frame's buttons is not a scroll (or tapping ▷ could never pause).
+addEventListener('touchstart', (ev) => !(ev.target as Element | null)?.closest?.('.marco-barra, .marco-fin, .marco-mapa') && (autoplay = false), { passive: true });
+// The series' frame: its buttons and keys (A, S; the plate and English come later).
 const sonido = crearSonido();
-const boton = (id: string) => document.querySelector<HTMLButtonElement>(`#${id}`);
-const marcar = () => {
-  boton('sound')?.setAttribute('aria-pressed', String(sonido.on));
-  boton('play')?.setAttribute('aria-pressed', String(autoplay));
-};
-const alternar = {
-  sonido: () => void sonido.toggle().then(marcar),
-  auto: () => {
-    autoplay = !autoplay;
-    marcar();
+const marco = crearMarco({
+  obra: 'mente',
+  acciones: {
+    play: () => {
+      if (!autoplay && target >= TOTAL - 0.05) {
+        scrollTo(0, 0);
+        target = 0;
+      }
+      autoplay = !autoplay;
+    },
+    sonido: () => sonido.toggle().then(() => sonido.on),
   },
-};
-boton('sound')?.addEventListener('click', alternar.sonido);
-boton('play')?.addEventListener('click', alternar.auto);
-addEventListener('keydown', (ev) => {
-  if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
-  const k = ev.key.toLowerCase();
-  if (k === 'a') alternar.auto();
-  if (k === 's') alternar.sonido();
 });
-// The buttons step back when nobody has touched anything for a while.
-let quieto = 0;
-const despierta = () => {
-  document.body.classList.remove('is-quieto');
-  clearTimeout(quieto);
-  quieto = window.setTimeout(() => document.body.classList.add('is-quieto'), 3500);
-};
-for (const e of ['pointermove', 'pointerdown', 'keydown', 'wheel', 'touchstart'] as const) addEventListener(e, despierta, { passive: true });
-despierta();
+/** The brand's light at this frame (each act says when it shows), for the frame's brand. */
+let marcaK = 0;
 /** The scene the sound plays at beat b: `<act>:<the moment's name>`. */
 function escenaEn(b: number) {
   const { t, p } = enTramo(b);
@@ -291,25 +279,16 @@ function step(now: number, dt: number, at: number) {
   g.globalAlpha = k;
   inst.placa?.(g, f);
   g.restore();
-  // The brand, top left (it stays through the bridges).
-  const m = inst.marca?.(p) ?? 1;
-  if (m > 0.01) {
-    g.save();
-    g.globalAlpha = m;
-    g.textBaseline = 'alphabetic';
-    g.shadowColor = 'rgba(0,0,0,0.8)';
-    g.shadowBlur = 10 * u;
-    g.font = FONT.serif(27 * u);
-    g.fillStyle = ink();
-    g.fillText('Mente', 40 * u, 54 * u);
-    g.restore();
-  }
+  // The brand, top left, is the frame's (it stays through the bridges).
+  marcaK = inst.marca?.(p) ?? 1;
+  // At the end the closing card is left alone; at rest the ladder steps back with the buttons.
   const c = inst.cuenta(p);
+  const kf = 1 - marco.final;
   g.save();
   g.globalAlpha = k;
-  cuenta(g, u, H, c, inst.rotulo(p));
+  cuenta(g, u, H, c && { ...c, a: (c.a ?? 1) * kf }, inst.rotulo(p), kf);
   g.restore();
-  if (c && inst.escalera !== false) escalera(g, u, W, H, c.h, (c.a ?? 1) * k);
+  if (c && inst.escalera !== false) escalera(g, u, W, H, c.h, (c.a ?? 1) * k * kf * (1 - marco.reposo));
   // With ?beat: where we are, to talk about a moment by its number.
   if (verBeat) {
     g.save();
@@ -335,10 +314,7 @@ function frame(now: number) {
     const next = Math.min(TOTAL, target + dt * 0.45);
     scrollTo(0, next * PX_PER_BEAT);
     target = next;
-    if (next >= TOTAL) {
-      autoplay = false;
-      marcar();
-    }
+    if (next >= TOTAL) autoplay = false;
   }
   const antes = P;
   P = frozen ?? damp(P, target, 4.2, dt);
@@ -347,6 +323,7 @@ function frame(now: number) {
     if (!porCalentar.length) calentarListo();
   }
   step(now, dt, P);
+  marco.update({ p: P / TOTAL, playing: autoplay, cromo: marcaK, inicio: 1 - smooth(clamp((P - 0.05) / 0.55, 0, 1)), fin: P > TOTAL - 0.5 ? 1 : 0 });
   // The sound: the scene of the moment on screen, and the hand on the scroll for the wind.
   if (sonido.on) sonido.update({ escena: escenaEn(P), ritmo: dt > 0 ? (P - antes) / dt : 0, salto: Math.abs(P - antes) > 2, tiempo: now / 1000 });
   requestAnimationFrame(frame);
