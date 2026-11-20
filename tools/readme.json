@@ -1,0 +1,9 @@
+[
+  {"nombre": "hero", "claves": [[0, 116.0], [1.4, 117.6], [12.4, 135.5], [14.0, 136.2]], "sub": 12, "shutter": 0.35},
+  {"nombre": "worm", "b": 21.5, "d": 6.5, "n": 180, "sub": 4, "placa": false},
+  {"nombre": "eye", "b": 75.5, "d": 9.5, "n": 180, "sub": 4, "placa": false},
+  {"nombre": "branches", "b": 185.0, "d": 16.0, "n": 240, "sub": 6, "placa": false},
+  {"nombre": "still", "b": 253.8, "d": 4.8, "n": 150, "sub": 4, "placa": false},
+  {"nombre": "swap", "b": 347.0, "d": 13.0, "n": 210, "sub": 4, "placa": false},
+  {"nombre": "descendants", "b": 381.0, "d": 9.5, "n": 210, "sub": 4, "placa": false}
+]

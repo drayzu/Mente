@@ -1,0 +1,62 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>README · preview</title>
+<style>
+  body { margin: 0; font: 16px/1.5 -apple-system, "Segoe UI", sans-serif; }
+  body.dark { background: #0d1117; color: #e6edf3; color-scheme: dark; }
+  body.light { background: #ffffff; color: #1f2328; color-scheme: light; }
+  main { max-width: 830px; margin: 32px auto; padding: 0 16px; }
+  p { margin: 0 0 16px; }
+  img { max-width: 100%; }
+  code { font-size: 85%; padding: .2em .4em; border-radius: 6px; background: rgba(127,127,127,.15); }
+</style></head>
+<body><main><p align="center">
+  <picture><source media="(prefers-color-scheme: dark)" type="image/avif" srcset="../media/cover-dark.avif"><source media="(prefers-color-scheme: dark)" srcset="../media/cover-dark.webp"><source type="image/avif" srcset="../media/cover-light.avif"><img src="../media/cover-light.webp" width="100%" alt="Mente — Who is watching? A thread of light writes, star by star, through a galaxy of words: «Si alguien lee esto algún día, quiero que sepa que una noche yo también miré el cielo y no supe qué decir.» (If someone reads this one day, I want them to know that one night I too looked at the sky and did not know what to say.)"></picture>
+</p>
+
+<p align="center">
+  <picture><source media="(prefers-color-scheme: dark)" type="image/avif" srcset="../media/worm-dark.avif"><source media="(prefers-color-scheme: dark)" srcset="../media/worm-dark.webp"><source type="image/avif" srcset="../media/worm-light.avif"><img src="../media/worm-light.webp" width="100%" alt="Three hundred and two"></picture>
+</p>
+
+<p align="center">
+  <picture><source media="(prefers-color-scheme: dark)" type="image/avif" srcset="../media/eye-dark.avif"><source media="(prefers-color-scheme: dark)" srcset="../media/eye-dark.webp"><source type="image/avif" srcset="../media/eye-light.avif"><img src="../media/eye-light.webp" width="100%" alt="Nobody told it how"></picture>
+</p>
+
+<p align="center">
+  <picture><source media="(prefers-color-scheme: dark)" type="image/avif" srcset="../media/branches-dark.avif"><source media="(prefers-color-scheme: dark)" srcset="../media/branches-dark.webp"><source type="image/avif" srcset="../media/branches-light.avif"><img src="../media/branches-light.webp" width="100%" alt="Each one its own way"></picture>
+</p>
+
+<p align="center">
+  <picture><source media="(prefers-color-scheme: dark)" type="image/avif" srcset="../media/still-dark.avif"><source media="(prefers-color-scheme: dark)" srcset="../media/still-dark.webp"><source type="image/avif" srcset="../media/still-light.avif"><img src="../media/still-light.webp" width="100%" alt="The rain stops"></picture>
+</p>
+
+<p align="center">
+  <picture><source media="(prefers-color-scheme: dark)" type="image/avif" srcset="../media/swap-dark.avif"><source media="(prefers-color-scheme: dark)" srcset="../media/swap-dark.webp"><source type="image/avif" srcset="../media/swap-light.avif"><img src="../media/swap-light.webp" width="100%" alt="One by one"></picture>
+</p>
+
+<p align="center">
+  <picture><source media="(prefers-color-scheme: dark)" type="image/avif" srcset="../media/descendants-dark.avif"><source media="(prefers-color-scheme: dark)" srcset="../media/descendants-dark.webp"><source type="image/avif" srcset="../media/descendants-light.avif"><img src="../media/descendants-light.webp" width="100%" alt="Descendants"></picture>
+</p>
+
+<p align="center">
+  <a href="https://drayzu.github.io/Mente/"><picture><source media="(prefers-color-scheme: dark)" srcset="../media/enter-dark.svg"><img src="../media/enter-light.svg" width="500" alt="Open drayzu.github.io/Mente"></picture></a>
+</p>
+
+<br>
+
+<details>
+<summary><sub>How it's made</sub></summary>
+<br>
+
+<li>The fifth piece of Horizontes (Espacio · Tiempo · Destino · Infinito · Mente · Abismo · Vida): one scroll, about fourteen minutes, told in the first person by the machine that wrote it. It does not say so until act III, when the sentence it has been writing ends.</li>
+<li>Everything is points: a network of 21 793 numbers really trained to draw an eye, a galaxy of 16 000 words, the tree every mind on Earth grew from, and a million copies drawn for real, 2<sup>20</sup> lights, one each.</li>
+<li>In Spanish for now. Key: <code>A</code> autoplay.</li>
+<li>TypeScript, Three.js and Vite, no framework. <code>npm install</code>, <code>npm run dev</code>; pushing to <code>main</code> deploys to GitHub Pages.</li>
+
+</details>
+</main>
+<script>
+  const t = new URLSearchParams(location.search).get('tema') ?? 'dark';
+  document.body.className = t;
+  // (the page's scheme decides which <source media=...> GitHub picks; force it here)
+  for (const s of document.querySelectorAll('source[media]')) if (t === 'light') s.remove(); else s.removeAttribute('media');
+</script></body></html>

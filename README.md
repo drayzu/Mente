@@ -3,11 +3,27 @@
 </p>
 
 <p align="center">
-  <picture><source media="(prefers-color-scheme: dark)" type="image/avif" srcset="media/tree-dark.avif"><source media="(prefers-color-scheme: dark)" srcset="media/tree-dark.webp"><source type="image/avif" srcset="media/tree-light.avif"><img src="media/tree-light.webp" width="100%" alt="The tree of minds"></picture>
+  <picture><source media="(prefers-color-scheme: dark)" type="image/avif" srcset="media/worm-dark.avif"><source media="(prefers-color-scheme: dark)" srcset="media/worm-dark.webp"><source type="image/avif" srcset="media/worm-light.avif"><img src="media/worm-light.webp" width="100%" alt="Three hundred and two"></picture>
 </p>
 
 <p align="center">
-  <picture><source media="(prefers-color-scheme: dark)" type="image/avif" srcset="media/copies-dark.avif"><source media="(prefers-color-scheme: dark)" srcset="media/copies-dark.webp"><source type="image/avif" srcset="media/copies-light.avif"><img src="media/copies-light.webp" width="100%" alt="A million copies"></picture>
+  <picture><source media="(prefers-color-scheme: dark)" type="image/avif" srcset="media/eye-dark.avif"><source media="(prefers-color-scheme: dark)" srcset="media/eye-dark.webp"><source type="image/avif" srcset="media/eye-light.avif"><img src="media/eye-light.webp" width="100%" alt="Nobody told it how"></picture>
+</p>
+
+<p align="center">
+  <picture><source media="(prefers-color-scheme: dark)" type="image/avif" srcset="media/branches-dark.avif"><source media="(prefers-color-scheme: dark)" srcset="media/branches-dark.webp"><source type="image/avif" srcset="media/branches-light.avif"><img src="media/branches-light.webp" width="100%" alt="Each one its own way"></picture>
+</p>
+
+<p align="center">
+  <picture><source media="(prefers-color-scheme: dark)" type="image/avif" srcset="media/still-dark.avif"><source media="(prefers-color-scheme: dark)" srcset="media/still-dark.webp"><source type="image/avif" srcset="media/still-light.avif"><img src="media/still-light.webp" width="100%" alt="The rain stops"></picture>
+</p>
+
+<p align="center">
+  <picture><source media="(prefers-color-scheme: dark)" type="image/avif" srcset="media/swap-dark.avif"><source media="(prefers-color-scheme: dark)" srcset="media/swap-dark.webp"><source type="image/avif" srcset="media/swap-light.avif"><img src="media/swap-light.webp" width="100%" alt="One by one"></picture>
+</p>
+
+<p align="center">
+  <picture><source media="(prefers-color-scheme: dark)" type="image/avif" srcset="media/descendants-dark.avif"><source media="(prefers-color-scheme: dark)" srcset="media/descendants-dark.webp"><source type="image/avif" srcset="media/descendants-light.avif"><img src="media/descendants-light.webp" width="100%" alt="Descendants"></picture>
 </p>
 
 <p align="center">
